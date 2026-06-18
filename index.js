@@ -35,6 +35,7 @@ import { getWeightsSummary } from "./signal-weights.js";
 import { appendDecision } from "./decision-log.js";
 
 import { REPO_ROOT, repoPath } from "./repo-root.js";
+import { reconcilePositions } from "./services/reconcile.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -795,7 +796,13 @@ Summarize the current portfolio health, total fees earned, and performance of al
     }
   }, pnlPollMs);
 
-  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog];
+  // Blockchain reconciliation — startup + every 30 min (T11)
+  reconcilePositions().catch((e) => log("reconcile_error", `Startup reconciliation failed: ${e.message}`));
+  const reconcileTask = cron.schedule("*/30 * * * *", async () => {
+    await reconcilePositions().catch((e) => log("reconcile_error", `Periodic reconciliation failed: ${e.message}`));
+  });
+
+  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog, reconcileTask];
   // Store interval ref so stopCronJobs can clear it
   _cronTasks._pnlPollInterval = pnlPollInterval;
   log("cron", `Cycles started — management every ${config.schedule.managementIntervalMin}m, screening every ${config.schedule.screeningIntervalMin}m`);
