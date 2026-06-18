@@ -1,31 +1,37 @@
 {
   "name": "sigma-capital-lp-bot",
-  "version": "1.0.0",
-  "description": "Automated LP bot for Meteora DLMM on Solana",
-  "main": "dist/index.js",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Autonomous DLMM LP agent for Meteora on Solana (Sigma Capital fork of meridian)",
+  "main": "index.js",
+  "bin": {
+    "meridian": "cli.js"
+  },
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "watch": "nodemon --exec ts-node src/index.ts"
+    "setup": "node setup.js",
+    "env:encrypt": "node scripts/envrypt.js encrypt",
+    "start": "node index.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:restart": "pm2 restart meridian --update-env",
+    "pm2:logs": "pm2 logs meridian --lines 100",
+    "dev": "DRY_RUN=true node index.js",
+    "test": "npm run test:syntax",
+    "test:syntax": "find . -path ./node_modules -prune -o -name '*.js' -exec node --check {} \\;",
+    "test:screen": "node test/test-screening.js",
+    "test:agent": "DRY_RUN=true node test/test-agent.js",
+    "postinstall": "node scripts/patch-anchor.js"
   },
   "dependencies": {
-    "@meteora-ag/dlmm": "^1.4.2",
-    "@solana/web3.js": "^1.95.3",
-    "@coral-xyz/anchor": "^0.30.1",
-    "node-telegram-bot-api": "^0.66.0",
-    "dotenv": "^16.4.5",
-    "bs58": "^5.0.0",
-    "decimal.js": "^10.4.3",
+    "@meteora-ag/dlmm": "1.9.4",
+    "@solana/web3.js": "^1.95.0",
     "bn.js": "^5.2.1",
-    "@solana/spl-token": "^0.4.6"
+    "bs58": "^5.0.0",
+    "dotenv": "^17.3.1",
+    "jsonrepair": "^3.13.3",
+    "node-cron": "^3.0.3",
+    "openai": "^4.73.0"
   },
-  "devDependencies": {
-    "@types/bn.js": "^5.1.6",
-    "@types/node": "^20.14.0",
-    "@types/node-telegram-bot-api": "^0.64.7",
-    "typescript": "^5.4.5",
-    "ts-node": "^10.9.2",
-    "nodemon": "^3.1.4"
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
