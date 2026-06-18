@@ -99,7 +99,8 @@ function getWallet() {
 }
 
 function shouldUseLpAgentRelay() {
-  return !!config.api.lpAgentRelayEnabled;
+  // LPAgent relay disabled in this fork — use SDK path directly.
+  return false;
 }
 
 function shouldUseLpAgentRelayForDeploy() {

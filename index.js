@@ -114,7 +114,8 @@ function sanitizeUntrustedPromptText(text, maxLen = 500) {
 }
 
 function shouldUsePnlRecheck() {
-  return !config.api.lpAgentRelayEnabled;
+  // LPAgent relay disabled — always use local PnL recheck.
+  return true;
 }
 
 function schedulePeakConfirmation(positionAddress) {
@@ -994,7 +995,7 @@ function parseConfigValue(raw) {
 function settingValue(key) {
   const values = {
     solMode: config.management.solMode,
-    lpAgentRelayEnabled: config.api.lpAgentRelayEnabled,
+    lpAgentRelayEnabled: false,
     chartIndicatorsEnabled: config.indicators.enabled,
     trailingTakeProfit: config.management.trailingTakeProfit,
     useDiscordSignals: config.screening.useDiscordSignals,
@@ -1055,7 +1056,7 @@ function renderSettingsMenu(page = "main") {
   const summary = [
     title,
     "",
-    `Mode: ${config.management.solMode ? "SOL" : "USD"} | Relay: ${config.api.lpAgentRelayEnabled ? "on" : "off"}`,
+    `Mode: ${config.management.solMode ? "SOL" : "USD"} | Relay: off`,
     `Strategy: ${config.strategy.strategy} | bins ${config.strategy.minBinsBelow}-${config.strategy.maxBinsBelow} | deploy ${config.management.deployAmountSol} SOL`,
     `TP/SL: ${config.management.takeProfitPct}% / ${config.management.stopLossPct}% | trailing ${config.management.trailingTakeProfit ? "on" : "off"}`,
     `Indicators: ${config.indicators.enabled ? "on" : "off"} | entry ${config.indicators.entryPreset} | ${fmtSettingValue(config.indicators.intervals)}`,

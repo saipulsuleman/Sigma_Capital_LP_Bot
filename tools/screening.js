@@ -5,6 +5,7 @@ import { log } from "../logger.js";
 import { isBaseMintOnCooldown, isPoolOnCooldown } from "../pool-memory.js";
 import { confirmIndicatorPreset } from "./chart-indicators.js";
 import { getAgentMeridianBase, getAgentMeridianHeaders } from "./agent-meridian.js";
+import { sanitizeMetadata } from "../utils/sanitize.js";
 
 const DATAPI_JUP = "https://datapi.jup.ag/v1";
 
@@ -666,7 +667,7 @@ export async function getTopCandidates({ limit = 10 } = {}) {
   }
 
   return {
-    candidates: eligible,
+    candidates: eligible.map(sanitizeMetadata),
     total_screened: pools.length,
     filtered_examples: filteredOut.slice(0, 3),
   };

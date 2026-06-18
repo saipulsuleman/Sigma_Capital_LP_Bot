@@ -1,9 +1,9 @@
 {
   "preset": "custom",
   "rpcUrl": "https://pump.helius-rpc.com",
-  "llmBaseUrl": "",
+  "llmBaseUrl": "https://api.deepseek.com",
   "llmApiKey": "",
-  "llmModel": "minimax/minimax-m2.7",
+  "llmModel": "deepseek-chat",
   "dryRun": true,
 
   "deployAmountSol": 0.5,
@@ -68,9 +68,9 @@
   "temperature": 0.373,
   "maxTokens": 4096,
   "maxSteps": 20,
-  "managementModel": "minimax/minimax-m2.5",
-  "screeningModel": "minimax/minimax-m2.5",
-  "generalModel": "minimax/minimax-m2.7",
+  "managementModel": "deepseek-chat",
+  "screeningModel": "deepseek-chat",
+  "generalModel": "deepseek-chat",
 
   "darwinEnabled": true,
   "darwinWindowDays": 60,
