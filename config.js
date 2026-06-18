@@ -69,7 +69,7 @@ export const config = {
   // ─── Pool Screening Thresholds ───────────
   screening: {
     excludeHighSupplyConcentration: u.excludeHighSupplyConcentration ?? true,
-    minFeeActiveTvlRatio: u.minFeeActiveTvlRatio ?? 0.05,
+    minFeeActiveTvlRatio: u.minFeeActiveTvlRatio ?? TIMEFRAME_SCREENING_SCALES[normalizeTimeframe(u.timeframe ?? "5m")].minFeeActiveTvlRatio,
     minTvl:            u.minTvl            ?? 10_000,
     maxTvl:            u.maxTvl !== undefined ? u.maxTvl : 150_000,
     minVolume:         u.minVolume         ?? 500,
