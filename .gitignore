@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# TypeScript compiled output (typescript-bot branch only)
+dist/
+
 # Environment & secrets
 .env
 .env.*
@@ -16,6 +19,12 @@ gmgn-config.json
 # Stray Claude Code worktrees
 .claude/worktrees/
 
+# SQLite database runtime files (schema.sql is committed; .db files are runtime data)
+db/*.db
+db/*.db-wal
+db/*.db-shm
+*.json.bak
+
 # Runtime state (position tracking, lessons — user-specific)
 state.json
 lessons.json
@@ -24,7 +33,6 @@ pool-memory.json
 token-blacklist.json
 strategy-library.json
 decision-log.json
-hivemind-cache.json
 signal-weights.json
 
 # Logs
@@ -39,8 +47,6 @@ CONTEXT.md
 dev-blocklist.json
 docs/
 
-# Discord listener queue
-discord-signals.json
 
 # Playwright MCP browser logs
 .playwright-mcp/
