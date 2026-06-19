@@ -40,6 +40,12 @@ if (u.publicApiKey) process.env.PUBLIC_API_KEY ||= u.publicApiKey;
 if (u.agentMeridianApiUrl) process.env.AGENT_MERIDIAN_API_URL ||= u.agentMeridianApiUrl;
 if (u.telegramChatId) process.env.TELEGRAM_CHAT_ID ||= String(u.telegramChatId);
 
+// Devnet routing (T22): SOLANA_NETWORK=devnet overrides RPC_URL with the devnet endpoint.
+// This routes ALL RPC calls (dlmm.js, wallet.js) to devnet automatically.
+if (process.env.SOLANA_NETWORK === "devnet" && process.env.HELIUS_DEVNET_RPC_URL) {
+  process.env.RPC_URL = process.env.HELIUS_DEVNET_RPC_URL;
+}
+
 const indicatorUserConfig = u.chartIndicators ?? {};
 
 // Optional standalone GMGN config file (mirrors user-config layering)

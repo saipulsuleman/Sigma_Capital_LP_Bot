@@ -106,6 +106,23 @@ CREATE TABLE IF NOT EXISTS circuit_breaker (
   date_utc           TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d', 'now'))
 );
 
+-- Devnet test run records (T22) — each row is one phase (deploy or close) of a devnet cycle.
+-- Gate: 10+ total_cycles rows with success=1 and no unhandled errors (checked by getDevnetSummary).
+CREATE TABLE IF NOT EXISTS devnet_runs (
+  id             TEXT NOT NULL DEFAULT (lower(hex(randomblob(8)))),
+  run_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  cycle_id       TEXT NOT NULL,           -- groups deploy+close of the same cycle
+  phase          TEXT NOT NULL,           -- 'deploy' | 'close'
+  pool_address   TEXT,
+  tx_signature   TEXT,
+  deploy_amount  REAL,
+  close_amount   REAL,
+  gas_actual_sol REAL,
+  slippage_pct   REAL,
+  success        INTEGER NOT NULL DEFAULT 0,
+  error_msg      TEXT
+);
+
 -- Migration metadata
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,

@@ -45,6 +45,7 @@ import { isConservativeMode, recordApiSuccess } from "./utils/conservative.js";
 import { openPaperPosition, updatePaperPositions, getPaperStats } from "./services/paperTrading.js";
 import { getCircuitStatus, resetCircuit, initCircuit } from "./utils/circuitBreaker.js";
 import { archiveOldPositions } from "./services/positionMemory.js";
+import { getDevnetSummary, isDevnetMode } from "./services/devnetRunner.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -1381,6 +1382,7 @@ function formatHelpText() {
     "/approve_skill <file> — approve and activate a pending skill",
     "/paper_stats — paper trading simulation stats (DRY_RUN)",
     "/circuit_status — circuit breaker state and loss counters",
+    "/devnet_report — devnet testing harness cycle results (T22)",
     "/stop — shut down agent",
   ].join("\n");
 }
@@ -1785,6 +1787,33 @@ async function telegramHandler(msg) {
         lines.push(``, `Reason: ${s.trigger_reason ?? "unknown"}`);
         lines.push(`Triggered at: ${s.triggered_at ?? "unknown"}`);
         lines.push(``, `Use /resume to clear the circuit and resume deploying.`);
+      }
+      await sendMessage(lines.join("\n")).catch(() => {});
+    } catch (e) {
+      await sendMessage(`Error: ${e.message}`).catch(() => {});
+    }
+    return;
+  }
+
+  // Devnet testing report (T22)
+  if (text === "/devnet_report") {
+    try {
+      const s = getDevnetSummary(getDb());
+      const mode = isDevnetMode() ? "DEVNET" : "MAINNET";
+      const lines = [
+        `Devnet Testing Report [${mode}]`,
+        "",
+        `Complete cycles: ${s.complete_cycles} (need 10 to pass gate)`,
+        `Successful cycles: ${s.successful_cycles}`,
+        `Gate status: ${s.gate_passed ? "PASSED" : "NOT YET"}`,
+        "",
+        `Total phases recorded: ${s.total_phases}`,
+        `  Success: ${s.successful_phases}  |  Failed: ${s.failed_phases}`,
+        `Avg gas per phase: ${s.avg_gas_sol != null ? `${s.avg_gas_sol.toFixed(6)} SOL` : "n/a"}`,
+        `Last run: ${s.last_run_at ?? "none"}`,
+      ];
+      if (!isDevnetMode()) {
+        lines.push("", "To enable: SOLANA_NETWORK=devnet HELIUS_DEVNET_RPC_URL=<url>");
       }
       await sendMessage(lines.join("\n")).catch(() => {});
     } catch (e) {
