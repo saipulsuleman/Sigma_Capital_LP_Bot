@@ -399,8 +399,9 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
     } catch (error) {
       log("error", `Agent loop error at step ${step}: ${error.message}`);
 
-      // If it's a rate limit, wait and retry
+      // If it's a rate limit, count as API error and wait before retry
       if (error.status === 429) {
+        try { recordApiError(); } catch {}
         log("agent", "Rate limited, waiting 30s...");
         await sleep(30000);
         continue;
@@ -418,4 +419,15 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Minimal API connectivity check that does NOT call any RPC endpoints.
+export async function pingApi(model) {
+  const response = await client.chat.completions.create({
+    model: model || DEFAULT_MODEL,
+    messages: [{ role: "user", content: "ping" }],
+    max_tokens: 10,
+  });
+  if (!response.choices?.length) throw new Error("API returned no choices");
+  return true;
 }

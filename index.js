@@ -3,7 +3,7 @@ import cron from "node-cron";
 import readline from "readline";
 import path from "path";
 import { fileURLToPath } from "url";
-import { agentLoop } from "./agent.js";
+import { agentLoop, pingApi } from "./agent.js";
 import { log } from "./logger.js";
 import { getMyPositions, closePosition, getActiveBin } from "./tools/dlmm.js";
 import { getWalletBalances } from "./tools/wallet.js";
@@ -41,7 +41,7 @@ import { reconcilePositions } from "./services/reconcile.js";
 import { runReviewAgent } from "./services/reviewAgent.js";
 import { checkAllocation } from "./utils/allocation.js";
 import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js";
-import { isConservativeMode } from "./utils/conservative.js";
+import { isConservativeMode, recordApiSuccess } from "./utils/conservative.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -96,6 +96,7 @@ let _managementBusy = false; // prevents overlapping management cycles
 let _screeningBusy = false;  // prevents overlapping screening cycles
 let _screeningLastTriggered = 0; // epoch ms — prevents management from spamming screening
 let _pollTriggeredAt = 0; // epoch ms — cooldown for poller-triggered management
+let _conservativeNotified = false; // prevents repeated Telegram alerts while in conservative mode
 const _peakConfirmTimers = new Map();
 const _trailingDropConfirmTimers = new Map();
 const TRAILING_PEAK_CONFIRM_DELAY_MS = 15_000;
@@ -448,7 +449,10 @@ export async function runScreeningCycle({ silent = false } = {}) {
       log("cron", "Conservative mode: SCREENER paused (3+ consecutive API errors)");
       screenReport = "Conservative mode: SCREENER paused — too many consecutive API errors. MANAGER still runs.";
       appendDecision({ type: "skip", actor: "SCREENER", summary: "Conservative mode", reason: "3+ consecutive DeepSeek API errors" });
-      sendMessage("Conservative mode: SCREENER paused (3 consecutive API errors). Monitoring positions only.").catch(() => {});
+      if (!_conservativeNotified) {
+        _conservativeNotified = true;
+        sendMessage("Conservative mode: SCREENER paused (3 consecutive API errors). Monitoring positions only.").catch(() => {});
+      }
       _screeningBusy = false;
       return screenReport;
     }
@@ -856,16 +860,16 @@ Summarize the current portfolio health, total fees earned, and performance of al
   });
 
   // Conservative mode health probe: every 5 min, test API and auto-recover if back (T17)
+  // Uses pingApi (direct API call, no RPC) so Helius outages don't block recovery.
   const conservativeProbeTask = cron.schedule("*/5 * * * *", async () => {
     if (!isConservativeMode()) return;
     log("cron", "Conservative mode: running API health probe");
     try {
-      await agentLoop("health probe", 1, [], "GENERAL", config.llm.generalModel, 10);
-      // recordApiSuccess() fires inside agentLoop on success — check if we exited conservative mode
-      if (!isConservativeMode()) {
-        log("cron", "Conservative mode: API recovered — resuming normal operations");
-        sendMessage("DeepSeek API recovered — exiting conservative mode. Resuming normal operations.").catch(() => {});
-      }
+      await pingApi(config.llm.generalModel);
+      recordApiSuccess();
+      _conservativeNotified = false;
+      log("cron", "Conservative mode: API recovered — resuming normal operations");
+      sendMessage("DeepSeek API recovered — exiting conservative mode. Resuming normal operations.").catch(() => {});
     } catch {
       log("cron", "Conservative mode: health probe failed — still in safe mode");
     }
@@ -1676,10 +1680,15 @@ async function telegramHandler(msg) {
         await sendMessage(`Not found in skills/pending/: ${filename}`).catch(() => {});
         return;
       }
-      fs.renameSync(pendingPath, activePath);
+      // DB UPDATE first — if it fails we haven't touched the filesystem yet
       const db = getDb();
-      db.prepare("UPDATE skills SET status='approved', approved_at=? WHERE filename=?")
+      const result = db.prepare("UPDATE skills SET status='approved', approved_at=? WHERE filename=?")
         .run(new Date().toISOString(), filename);
+      if (result.changes === 0) {
+        await sendMessage(`Skill file found on disk but missing from DB: ${filename}. Manual DB fix needed.`).catch(() => {});
+        return;
+      }
+      fs.renameSync(pendingPath, activePath);
       await sendMessage(`Skill approved and moved to active:\n${filename}`).catch(() => {});
     } catch (e) {
       await sendMessage(`Error approving skill: ${e.message}`).catch(() => {});
