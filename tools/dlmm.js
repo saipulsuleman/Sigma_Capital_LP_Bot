@@ -494,6 +494,28 @@ export async function deployPosition({
     return { success: false, error: "Pool on cooldown — was recently closed with a cooldown reason. Try a different pool." };
   }
 
+  if (process.env.DRY_RUN === "true") {
+    const dryAmountY = Number(amount_y ?? amount_sol ?? config.management.deployAmountSol);
+    const dryAmountX = Number(amount_x ?? 0);
+    const dryBinsBelow = Number(activeBinsBelow);
+    const dryBinsAbove = Number(activeBinsAbove);
+    return {
+      dry_run: true,
+      would_deploy: {
+        pool_address,
+        strategy: activeStrategy,
+        bins_below: dryBinsBelow,
+        bins_above: dryBinsAbove,
+        downside_pct: downside_pct ?? null,
+        upside_pct: upside_pct ?? null,
+        amount_x: dryAmountX,
+        amount_y: dryAmountY,
+        wide_range: (dryBinsBelow + dryBinsAbove) > 69,
+      },
+      message: "DRY RUN — no transaction sent",
+    };
+  }
+
   const { StrategyType, getBinIdFromPrice, getPriceOfBinByBinId } = await getDLMM();
   const pool = await getPool(pool_address);
   const baseMint = pool.lbPair.tokenXMint.toString();
@@ -579,24 +601,6 @@ export async function deployPosition({
     throw new Error(
       `Invalid deploy range: total bins ${totalBins} is below minimum ${minBinsBelow}. Refusing 1-bin/tiny-range deploy.`,
     );
-  }
-
-  if (process.env.DRY_RUN === "true") {
-    return {
-      dry_run: true,
-      would_deploy: {
-        pool_address,
-        strategy: activeStrategy,
-        bins_below: activeBinsBelow,
-        bins_above: activeBinsAbove,
-        downside_pct: downside_pct ?? null,
-        upside_pct: upside_pct ?? null,
-        amount_x: finalAmountX,
-        amount_y: finalAmountY,
-        wide_range: totalBins > 69,
-      },
-      message: "DRY RUN — no transaction sent",
-    };
   }
 
   const isWideRange = totalBins > 69;
