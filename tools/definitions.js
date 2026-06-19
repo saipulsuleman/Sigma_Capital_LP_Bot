@@ -66,6 +66,42 @@ If this returns one candidate, still judge whether it is actually worth deployin
     }
   },
 
+  // ─── Market Intelligence (T19) ─────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "get_token_market_data",
+      description: `Get combined market intelligence from Birdeye and DexScreener.
+Call this during SCREENER evaluation to enrich context before deploying.
+
+Birdeye data (requires BIRDEYE_API_KEY):
+- 24h organic volume in USD
+- Top-10 holder concentration %
+- Price momentum: 1h and 4h % change
+
+DexScreener data:
+- Token age in hours (from pair creation)
+- Trending/boost status
+- Social signal count (websites + socials)
+
+API keys are optional — birdeye_available and dexscreener_available flags tell you which sources were available.
+Pass pool_address for DexScreener data, mint for Birdeye data. Pass both for full intelligence.`,
+      parameters: {
+        type: "object",
+        properties: {
+          pool_address: {
+            type: "string",
+            description: "Pool address for DexScreener data"
+          },
+          mint: {
+            type: "string",
+            description: "Base token mint address for Birdeye data"
+          }
+        }
+      }
+    }
+  },
+
   {
     type: "function",
     function: {
