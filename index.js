@@ -582,10 +582,12 @@ export async function runScreeningCycle({ silent = false } = {}) {
       }
     }
 
-    // Pre-fetch active_bin for all passing candidates in parallel
-    const activeBinResults = await Promise.allSettled(
-      passing.map(({ pool }) => getActiveBin({ pool_address: pool.pool }))
-    );
+    // Pre-fetch active_bin for all passing candidates in parallel (skip in DRY_RUN — SDK unavailable)
+    const activeBinResults = process.env.DRY_RUN === "true"
+      ? passing.map(() => ({ status: "fulfilled", value: { binId: null, dry_run: true } }))
+      : await Promise.allSettled(
+          passing.map(({ pool }) => getActiveBin({ pool_address: pool.pool }))
+        );
 
     // Build compact candidate blocks
     const candidateBlocks = passing.map(({ pool, sw, n, ti, mem }, i) => {
@@ -607,7 +609,7 @@ export async function runScreeningCycle({ silent = false } = {}) {
         `  audit: top10=${top10Pct}%, bots=${botPct}%, fees=${feesSol}SOL${launchpad ? `, launchpad=${launchpad}` : ""}`,
         pvpLine,
         `  smart_wallets: ${sw?.in_pool?.length ?? 0} present${sw?.in_pool?.length ? ` → CONFIDENCE BOOST (${sw.in_pool.map(w => w.name).join(", ")})` : ""}`,
-        activeBin != null ? `  active_bin: ${activeBin}` : null,
+        `  active_bin: ${activeBin ?? "(dry-run)"}`,
         priceChange != null ? `  1h: price${priceChange >= 0 ? "+" : ""}${priceChange}%, net_buyers=${netBuyers ?? "?"}` : null,
         n?.narrative ? `  narrative_untrusted: ${sanitizeUntrustedPromptText(n.narrative, 500)}` : `  narrative_untrusted: none`,
         mem ? `  memory_untrusted: ${sanitizeUntrustedPromptText(mem, 500)}` : null,
