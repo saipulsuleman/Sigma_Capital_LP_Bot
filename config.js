@@ -29,8 +29,9 @@ const strategyDefaultBinsBelow = Math.max(
 );
 
 // Apply wallet/RPC from user-config if not already in env
-if (u.rpcUrl)    process.env.RPC_URL            ||= u.rpcUrl;
-if (u.walletKey) process.env.WALLET_PRIVATE_KEY ||= u.walletKey;
+if (u.rpcUrl)         process.env.RPC_URL            ||= u.rpcUrl;
+if (u.fallbackRpcUrl) process.env.FALLBACK_RPC_URL  ||= u.fallbackRpcUrl;
+if (u.walletKey)      process.env.WALLET_PRIVATE_KEY ||= u.walletKey;
 if (u.llmModel)  process.env.LLM_MODEL          ||= u.llmModel;
 if (u.llmBaseUrl) process.env.LLM_BASE_URL      ||= u.llmBaseUrl;
 if (u.llmApiKey)  process.env.LLM_API_KEY       ||= u.llmApiKey;

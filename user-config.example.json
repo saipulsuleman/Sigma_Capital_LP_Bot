@@ -1,6 +1,7 @@
 {
   "preset": "custom",
   "rpcUrl": "https://pump.helius-rpc.com",
+  "fallbackRpcUrl": "https://api.mainnet-beta.solana.com",
   "llmBaseUrl": "https://api.deepseek.com",
   "llmApiKey": "",
   "llmModel": "deepseek-chat",

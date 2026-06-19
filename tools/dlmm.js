@@ -27,6 +27,7 @@ import { recordPerformance } from "../lessons.js";
 import { isBaseMintOnCooldown, isPoolOnCooldown } from "../pool-memory.js";
 import { normalizeMint } from "./wallet.js";
 import { appendDecision } from "../decision-log.js";
+import { createResilientConnection } from "../utils/rpc.js";
 import { agentMeridianJson, getAgentIdForRequests, getAgentMeridianHeaders } from "./agent-meridian.js";
 import { getAndClearStagedSignals } from "../signal-tracker.js";
 import { computePositions, fetchDlmmPnlForPool } from "./pnl.js";
@@ -82,7 +83,10 @@ let _wallet = null;
 
 function getConnection() {
   if (!_connection) {
-    _connection = new Connection(process.env.RPC_URL, "confirmed");
+    const fallback = process.env.FALLBACK_RPC_URL;
+    _connection = fallback
+      ? createResilientConnection(process.env.RPC_URL, fallback)
+      : new Connection(process.env.RPC_URL, "confirmed");
   }
   return _connection;
 }
