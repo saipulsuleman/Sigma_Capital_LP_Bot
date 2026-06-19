@@ -1174,7 +1174,7 @@ export async function getMyPositions({ force = false, silent = false, wallet_add
     // ── Primary path: public infra (on-chain RPC + Jupiter + Meteora deposits) ──
     // No LPAgent / agentmeridian dependency, so the poller runs aggressively on
     // fully public resources. Falls through to the Meteora-API path on any error.
-    if (config.pnl.source === "rpc") {
+    if (config.pnl.source === "rpc" && process.env.DRY_RUN !== "true") {
       try {
         if (!silent) log("positions", `Computing PnL from RPC (${config.pnl.rpcUrl})...`);
         const rpcResult = await computePositions(walletAddress);
