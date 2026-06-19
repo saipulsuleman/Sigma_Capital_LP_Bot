@@ -6,11 +6,11 @@
   "llmModel": "deepseek-chat",
   "dryRun": true,
 
-  "deployAmountSol": 0.5,
-  "maxPositions": 3,
-  "minSolToOpen": 0.55,
-  "maxDeployAmount": 50,
-  "gasReserve": 0.2,
+  "deployAmountSol": 0.15,
+  "maxPositions": 2,
+  "minSolToOpen": 0.25,
+  "maxDeployAmount": 0.15,
+  "gasReserve": 0.1,
   "positionSizePct": 0.35,
 
   "strategy": "bid_ask",

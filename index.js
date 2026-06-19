@@ -36,6 +36,7 @@ import { appendDecision } from "./decision-log.js";
 
 import { REPO_ROOT, repoPath } from "./repo-root.js";
 import { reconcilePositions } from "./services/reconcile.js";
+import { checkAllocation } from "./utils/allocation.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -394,28 +395,21 @@ export async function runScreeningCycle({ silent = false } = {}) {
   let screenReport = null;
   try {
     [prePositions, preBalance] = await Promise.all([getMyPositions({ force: true }), getWalletBalances()]);
-    if (prePositions.total_positions >= config.risk.maxPositions) {
-      log("cron", `Screening skipped — max positions reached (${prePositions.total_positions}/${config.risk.maxPositions})`);
-      screenReport = `Screening skipped — max positions reached (${prePositions.total_positions}/${config.risk.maxPositions}).`;
-      appendDecision({
-        type: "skip",
-        actor: "SCREENER",
-        summary: "Screening skipped",
-        reason: `Max positions reached (${prePositions.total_positions}/${config.risk.maxPositions})`,
-      });
-      _screeningBusy = false;
-      return screenReport;
-    }
-    const minRequired = config.management.deployAmountSol + config.management.gasReserve;
     const isDryRun = process.env.DRY_RUN === "true";
-    if (!isDryRun && preBalance.sol < minRequired) {
-      log("cron", `Screening skipped — insufficient SOL (${preBalance.sol.toFixed(3)} < ${minRequired} needed for deploy + gas)`);
-      screenReport = `Screening skipped — insufficient SOL (${preBalance.sol.toFixed(3)} < ${minRequired} needed for deploy + gas).`;
+    const allocCheck = checkAllocation({
+      openCount: prePositions.total_positions,
+      solBalance: preBalance.sol,
+      cfg: config,
+      isDryRun,
+    });
+    if (!allocCheck.allowed) {
+      log("cron", `Screening skipped — ${allocCheck.reason}`);
+      screenReport = `Screening skipped — ${allocCheck.reason}.`;
       appendDecision({
         type: "skip",
         actor: "SCREENER",
         summary: "Screening skipped",
-        reason: `Insufficient SOL (${preBalance.sol.toFixed(3)} < ${minRequired})`,
+        reason: allocCheck.reason,
       });
       _screeningBusy = false;
       return screenReport;
