@@ -70,6 +70,26 @@ CREATE TABLE IF NOT EXISTS daily_usage (
   PRIMARY KEY (date, model)
 );
 
+-- Paper trading positions — simulated positions tracked in DRY_RUN mode (T18)
+-- OOR detection uses entry_bin ± bins_below/above against live active bin.
+CREATE TABLE IF NOT EXISTS paper_positions (
+  id                TEXT PRIMARY KEY,
+  pool_address      TEXT NOT NULL,
+  pool_name         TEXT,
+  strategy          TEXT,
+  entry_bin         INTEGER,
+  bins_below        INTEGER NOT NULL DEFAULT 0,
+  bins_above        INTEGER NOT NULL DEFAULT 0,
+  amount_sol        REAL NOT NULL,
+  entry_time        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  exit_time         TEXT,
+  exit_reason       TEXT,
+  simulated_fee_sol REAL NOT NULL DEFAULT 0.0,
+  simulated_pnl_sol REAL NOT NULL DEFAULT 0.0,
+  reasoning_summary TEXT,
+  status            TEXT NOT NULL DEFAULT 'open'
+);
+
 -- Migration metadata
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,

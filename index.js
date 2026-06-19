@@ -42,6 +42,7 @@ import { runReviewAgent } from "./services/reviewAgent.js";
 import { checkAllocation } from "./utils/allocation.js";
 import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js";
 import { isConservativeMode, recordApiSuccess } from "./utils/conservative.js";
+import { openPaperPosition, updatePaperPositions, getPaperStats } from "./services/paperTrading.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -698,10 +699,26 @@ IMPORTANT:
           if (name === "deploy_position") deployAttempted = true;
           await liveMessage?.toolStart(name);
         },
-        onToolFinish: async ({ name, result, success }) => {
+        onToolFinish: async ({ name, args, result, success }) => {
           if (name === "deploy_position") {
             deployAttempted = true;
             deploySucceeded = Boolean(success && result?.success !== false && !result?.error && !result?.blocked);
+            // Paper trading: record simulated position in DRY_RUN mode (T18)
+            if (process.env.DRY_RUN === "true" && deploySucceeded) {
+              const poolAddr = args?.pool_address || result?.would_deploy?.pool_address;
+              if (poolAddr) {
+                getActiveBin({ pool_address: poolAddr }).then((binData) => {
+                  openPaperPosition(getDb(), {
+                    pool_address: poolAddr,
+                    pool_name: args?.pool_name || null,
+                    entry_bin: binData?.binId ?? null,
+                    bins_below: result?.would_deploy?.bins_below ?? Number(args?.bins_below) || 0,
+                    bins_above: result?.would_deploy?.bins_above ?? Number(args?.bins_above) || 0,
+                    amount_sol: Number(args?.amount_y) || Number(args?.amount_sol) || config.management.deployAmountSol,
+                  });
+                }).catch((e) => log("paper_warn", `Failed to record paper position: ${e.message}`));
+              }
+            }
           }
           await liveMessage?.toolFinish(name, result, success);
         },
@@ -875,7 +892,20 @@ Summarize the current portfolio health, total fees earned, and performance of al
     }
   });
 
-  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog, reconcileTask, heartbeatTask, conservativeProbeTask];
+  // Paper trading OOR check — runs every management interval, only in DRY_RUN mode (T18)
+  const paperTradingTask = cron.schedule(`*/${Math.max(1, config.schedule.managementIntervalMin)} * * * *`, async () => {
+    if (process.env.DRY_RUN !== "true") return;
+    try {
+      const closed = await updatePaperPositions(getDb(), getActiveBin);
+      for (const pos of closed) {
+        log("paper", `Paper OOR: ${pos.pool_name || pos.pool_address} | fee=${pos.simulated_fee_sol?.toFixed(6)} SOL`);
+      }
+    } catch (e) {
+      log("paper_error", `Paper trading update failed: ${e.message}`);
+    }
+  });
+
+  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog, reconcileTask, heartbeatTask, conservativeProbeTask, paperTradingTask];
   // Store interval ref so stopCronJobs can clear it
   _cronTasks._pnlPollInterval = pnlPollInterval;
   log("cron", `Cycles started — management every ${config.schedule.managementIntervalMin}m, screening every ${config.schedule.screeningIntervalMin}m`);
@@ -1336,6 +1366,7 @@ function formatHelpText() {
     "/resume — start cron cycles again",
     "/skills — list pending and approved skill files",
     "/approve_skill <file> — approve and activate a pending skill",
+    "/paper_stats — paper trading simulation stats (DRY_RUN)",
     "/stop — shut down agent",
   ].join("\n");
 }
@@ -1692,6 +1723,34 @@ async function telegramHandler(msg) {
       await sendMessage(`Skill approved and moved to active:\n${filename}`).catch(() => {});
     } catch (e) {
       await sendMessage(`Error approving skill: ${e.message}`).catch(() => {});
+    }
+    return;
+  }
+
+  // Paper trading stats (T18)
+  if (text === "/paper_stats") {
+    try {
+      const s = getPaperStats(getDb());
+      const winRateStr = s.win_rate != null ? `${(s.win_rate * 100).toFixed(1)}%` : "n/a";
+      const avgPnlStr = s.avg_pnl_sol != null ? `${s.avg_pnl_sol >= 0 ? "+" : ""}${s.avg_pnl_sol.toFixed(6)} SOL` : "n/a";
+      const totalFeeStr = s.total_fee_sol != null ? `${s.total_fee_sol.toFixed(6)} SOL` : "n/a";
+      const avgHoldStr = s.avg_holding_hours != null ? `${s.avg_holding_hours.toFixed(1)}h` : "n/a";
+      const hist = s.holding_histogram;
+      const lines = [
+        "Paper Trading Stats (DRY_RUN simulation)",
+        "",
+        `Open positions: ${s.open_count}`,
+        `Closed: ${s.closed_count} (${s.win_count} wins, ${s.closed_count - s.win_count} losses)`,
+        `Win rate: ${winRateStr}`,
+        `Avg PnL: ${avgPnlStr}`,
+        `Total sim fees: ${totalFeeStr}`,
+        `Avg holding: ${avgHoldStr}`,
+        `Holding breakdown:`,
+        `  <1h: ${hist.lt1h} | 1-4h: ${hist.h1_4} | 4-24h: ${hist.h4_24} | >24h: ${hist.gt24h}`,
+      ];
+      await sendMessage(lines.join("\n")).catch(() => {});
+    } catch (e) {
+      await sendMessage(`Error: ${e.message}`).catch(() => {});
     }
     return;
   }
