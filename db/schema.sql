@@ -90,6 +90,20 @@ CREATE TABLE IF NOT EXISTS paper_positions (
   status            TEXT NOT NULL DEFAULT 'open'
 );
 
+-- Circuit breaker state — single-row sentinel (id must be 1) (T20)
+-- Tracks daily loss, consecutive losses, and triggered status.
+-- date_utc triggers automatic reset of daily_loss_usd on UTC day rollover.
+CREATE TABLE IF NOT EXISTS circuit_breaker (
+  id                 INTEGER PRIMARY KEY CHECK (id = 1),
+  daily_loss_usd     REAL    NOT NULL DEFAULT 0.0,
+  consecutive_losses INTEGER NOT NULL DEFAULT 0,
+  peak_portfolio_sol REAL,
+  triggered          INTEGER NOT NULL DEFAULT 0,
+  trigger_reason     TEXT,
+  triggered_at       TEXT,
+  date_utc           TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d', 'now'))
+);
+
 -- Migration metadata
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,

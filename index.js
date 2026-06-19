@@ -43,6 +43,7 @@ import { checkAllocation } from "./utils/allocation.js";
 import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js";
 import { isConservativeMode, recordApiSuccess } from "./utils/conservative.js";
 import { openPaperPosition, updatePaperPositions, getPaperStats } from "./services/paperTrading.js";
+import { getCircuitStatus, resetCircuit, initCircuit } from "./utils/circuitBreaker.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -57,6 +58,7 @@ if (isMain) {
   }
   log("startup", `Mode: ${process.env.DRY_RUN === "true" ? "DRY RUN" : "LIVE"}`);
   log("startup", `Model: ${process.env.LLM_MODEL || "hermes-3-405b"}`);
+  try { initCircuit(getDb()); } catch {}
 }
 
 const TP_PCT = config.management.takeProfitPct;
@@ -1367,6 +1369,7 @@ function formatHelpText() {
     "/skills — list pending and approved skill files",
     "/approve_skill <file> — approve and activate a pending skill",
     "/paper_stats — paper trading simulation stats (DRY_RUN)",
+    "/circuit_status — circuit breaker state and loss counters",
     "/stop — shut down agent",
   ].join("\n");
 }
@@ -1755,6 +1758,30 @@ async function telegramHandler(msg) {
     return;
   }
 
+  // Circuit breaker status (T20)
+  if (text === "/circuit_status") {
+    try {
+      const s = getCircuitStatus(getDb());
+      const triggered = Boolean(s.triggered);
+      const lines = [
+        `Circuit Breaker: ${triggered ? "TRIGGERED" : "OK"}`,
+        "",
+        `Daily loss: $${(s.daily_loss_usd ?? 0).toFixed(2)} / $${config.circuitBreaker?.maxDailyLossUsd ?? 5}`,
+        `Consecutive losses: ${s.consecutive_losses ?? 0} / ${config.circuitBreaker?.maxConsecutiveLosses ?? 3}`,
+        `Peak portfolio: ${s.peak_portfolio_sol != null ? `${s.peak_portfolio_sol.toFixed(4)} SOL` : "n/a"}`,
+      ];
+      if (triggered) {
+        lines.push(``, `Reason: ${s.trigger_reason ?? "unknown"}`);
+        lines.push(`Triggered at: ${s.triggered_at ?? "unknown"}`);
+        lines.push(``, `Use /resume to clear the circuit and resume deploying.`);
+      }
+      await sendMessage(lines.join("\n")).catch(() => {});
+    } catch (e) {
+      await sendMessage(`Error: ${e.message}`).catch(() => {});
+    }
+    return;
+  }
+
   if (text === "/pause") {
     stopCronJobs();
     cronStarted = false;
@@ -1763,14 +1790,16 @@ async function telegramHandler(msg) {
   }
 
   if (text === "/resume") {
+    // Clear circuit breaker triggered state so deploying can resume (T20)
+    try { resetCircuit(getDb()); } catch {}
     if (!cronStarted) {
       cronStarted = true;
       timers.managementLastRun = Date.now();
       timers.screeningLastRun = Date.now();
       startCronJobs();
-      await sendMessage("▶️ Autonomous cycles resumed.").catch(() => {});
+      await sendMessage("▶️ Autonomous cycles resumed. Circuit breaker cleared.").catch(() => {});
     } else {
-      await sendMessage("Autonomous cycles are already running.").catch(() => {});
+      await sendMessage("▶️ Circuit breaker cleared. Autonomous cycles already running.").catch(() => {});
     }
     return;
   }

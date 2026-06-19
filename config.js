@@ -204,6 +204,13 @@ export const config = {
     ),
   },
 
+  // ─── Circuit Breaker (T20) ──────────────
+  circuitBreaker: {
+    maxDailyLossUsd:      u.circuitBreaker?.maxDailyLossUsd      ?? 5,
+    maxConsecutiveLosses: u.circuitBreaker?.maxConsecutiveLosses ?? 3,
+    maxDrawdownPct:       u.circuitBreaker?.maxDrawdownPct       ?? 20,
+  },
+
   indicators: {
     enabled: indicatorUserConfig.enabled ?? false,
     entryPreset: indicatorUserConfig.entryPreset ?? "supertrend_break",

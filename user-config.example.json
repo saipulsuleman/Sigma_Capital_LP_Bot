@@ -102,5 +102,11 @@
     "rsiOverbought": 80,
     "requireAllIntervals": false
   },
-  "telegramChatId": ""
+  "telegramChatId": "",
+
+  "circuitBreaker": {
+    "maxDailyLossUsd": 5,
+    "maxConsecutiveLosses": 3,
+    "maxDrawdownPct": 20
+  }
 }

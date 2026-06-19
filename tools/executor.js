@@ -27,7 +27,8 @@ import fs from "fs";
 import { execSync, spawn } from "child_process";
 import { REPO_ROOT, repoPath } from "../repo-root.js";
 import { normalizeTimeframe, scaleScreeningToTimeframe } from "../screening-scales.js";
-import { incrementCounter, resetCounter } from "../db/db.js";
+import { incrementCounter, resetCounter, getDb } from "../db/db.js";
+import { recordClose as recordCircuitClose, checkCircuit, triggerCircuit } from "../utils/circuitBreaker.js";
 
 const USER_CONFIG_PATH = repoPath("user-config.json");
 const POOL_DISCOVERY_BASE = "https://pool-discovery-api.datapi.meteora.ag";
@@ -601,6 +602,19 @@ export async function executeTool(name, args) {
     }
   }
 
+  // ─── Circuit breaker gate (T20) ──────────
+  if (name === "deploy_position") {
+    try {
+      const circuit = checkCircuit(getDb(), config.circuitBreaker);
+      if (circuit.triggered) {
+        log("circuit", `deploy_position blocked by circuit breaker: ${circuit.reason}`);
+        return { blocked: true, circuit_breaker: true, reason: `Circuit breaker active: ${circuit.reason}` };
+      }
+    } catch (e) {
+      log("circuit_warn", `Circuit breaker check failed: ${e.message}`);
+    }
+  }
+
   // ─── Execute ──────────────────────────────
   try {
     const result = await fn(args);
@@ -622,6 +636,15 @@ export async function executeTool(name, args) {
         notifyDeploy({ pair: result.pool_name || args.pool_name || args.pool_address?.slice(0, 8), amountSol: args.amount_y ?? args.amount_sol ?? 0, position: result.position, tx: result.txs?.[0] ?? result.tx, priceRange: result.price_range, rangeCoverage: result.range_coverage, binStep: result.bin_step, baseFee: result.base_fee }).catch(() => {});
       } else if (name === "close_position") {
         notifyClose({ pair: result.pool_name || args.position_address?.slice(0, 8), pnlUsd: result.pnl_usd ?? 0, pnlPct: result.pnl_pct ?? 0 }).catch(() => {});
+        // Record close in circuit breaker (T20)
+        try {
+          const { newly_triggered, reason } = recordCircuitClose(getDb(), { pnl_usd: result.pnl_usd ?? 0, config: config.circuitBreaker });
+          if (newly_triggered) {
+            log("circuit", `Circuit breaker triggered after close: ${reason}`);
+          }
+        } catch (e) {
+          log("circuit_warn", `Circuit breaker recordClose failed: ${e.message}`);
+        }
         // Note low-yield closes in pool memory so screener avoids redeploying
         if (args.reason && args.reason.toLowerCase().includes("yield")) {
           const poolAddr = result.pool || args.pool_address;
