@@ -47,6 +47,7 @@ import { getCircuitStatus, resetCircuit, initCircuit } from "./utils/circuitBrea
 import { archiveOldPositions } from "./services/positionMemory.js";
 import { getDevnetSummary, isDevnetMode } from "./services/devnetRunner.js";
 import { getBacktestSummary } from "./services/historicalReplay.js";
+import { getPaperAnalytics } from "./services/analytics.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -1385,6 +1386,7 @@ function formatHelpText() {
     "/circuit_status — circuit breaker state and loss counters",
     "/devnet_report — devnet testing harness cycle results (T22)",
     "/backtest_report — historical replay pipeline win rate summary (T23)",
+    "/analytics — paper trading + backtest combined analytics (T24)",
     "/stop — shut down agent",
   ].join("\n");
 }
@@ -1789,6 +1791,38 @@ async function telegramHandler(msg) {
         lines.push(``, `Reason: ${s.trigger_reason ?? "unknown"}`);
         lines.push(`Triggered at: ${s.triggered_at ?? "unknown"}`);
         lines.push(``, `Use /resume to clear the circuit and resume deploying.`);
+      }
+      await sendMessage(lines.join("\n")).catch(() => {});
+    } catch (e) {
+      await sendMessage(`Error: ${e.message}`).catch(() => {});
+    }
+    return;
+  }
+
+  // Analytics dashboard (T24)
+  if (text === "/analytics") {
+    try {
+      const a = getPaperAnalytics(getDb());
+      const winRateStr = a.win_rate != null ? `${(a.win_rate * 100).toFixed(1)}%` : "n/a";
+      const sharpeStr  = a.sharpe != null ? a.sharpe.toFixed(2) : `n/a (need ≥20 closes, have ${a.closed_count})`;
+      const hist = a.holding_histogram;
+      const lines = [
+        "Paper Trading Analytics",
+        "",
+        `Closed positions: ${a.closed_count}`,
+        `  Win: ${a.win_count}  |  Loss: ${a.loss_count}`,
+        `  Win rate: ${winRateStr}`,
+        `  Avg PnL: ${a.avg_pnl_sol != null ? a.avg_pnl_sol.toFixed(6) + " SOL" : "n/a"}`,
+        `  Sharpe (annualized): ${sharpeStr}`,
+        "",
+        `Holding time distribution:`,
+        `  <1h: ${hist["<1h"]}  |  1-4h: ${hist["1-4h"]}  |  4-24h: ${hist["4-24h"]}  |  >24h: ${hist[">24h"]}`,
+      ];
+      if (a.top_losing_patterns.length > 0) {
+        lines.push("", "Top losing pool patterns (auto-fed to REVIEW agent):");
+        for (const p of a.top_losing_patterns) {
+          lines.push(`  ${p.pool_name}: avg ${p.avg_pnl_sol.toFixed(6)} SOL (${p.count} closes)`);
+        }
       }
       await sendMessage(lines.join("\n")).catch(() => {});
     } catch (e) {
