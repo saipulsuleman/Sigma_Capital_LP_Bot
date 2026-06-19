@@ -106,6 +106,23 @@ CREATE TABLE IF NOT EXISTS circuit_breaker (
   date_utc           TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d', 'now'))
 );
 
+-- Historical backtest results (T23) — one row per (pool, date, decision) simulated replay.
+-- Each scenario is run 3x at temp>0 for robustness; majority vote stored in majority_decision.
+-- actual_outcome: 'win' | 'loss' | 'unknown' — filled after 7-day APY comparison.
+CREATE TABLE IF NOT EXISTS backtests (
+  id               TEXT NOT NULL DEFAULT (lower(hex(randomblob(8)))),
+  pool_address     TEXT NOT NULL,
+  pool_name        TEXT,
+  snapshot_date    TEXT NOT NULL,           -- 'YYYY-MM-DD' — the day the frozen context was built
+  decision         TEXT NOT NULL,           -- final majority vote: 'deploy' | 'skip'
+  decision_reason  TEXT,                    -- brief reason from LLM
+  majority_count   INTEGER NOT NULL DEFAULT 1,  -- how many of 3 runs agreed (1-3)
+  fee_apy_7d       REAL,                    -- actual 7-day fee APY after snapshot_date
+  oor_within_24h   INTEGER,                 -- 1=went OOR within 24h, 0=held, NULL=unknown
+  actual_outcome   TEXT NOT NULL DEFAULT 'unknown',  -- 'win' | 'loss' | 'unknown'
+  ran_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
 -- Devnet test run records (T22) — each row is one phase (deploy or close) of a devnet cycle.
 -- Gate: 10+ total_cycles rows with success=1 and no unhandled errors (checked by getDevnetSummary).
 CREATE TABLE IF NOT EXISTS devnet_runs (

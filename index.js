@@ -46,6 +46,7 @@ import { openPaperPosition, updatePaperPositions, getPaperStats } from "./servic
 import { getCircuitStatus, resetCircuit, initCircuit } from "./utils/circuitBreaker.js";
 import { archiveOldPositions } from "./services/positionMemory.js";
 import { getDevnetSummary, isDevnetMode } from "./services/devnetRunner.js";
+import { getBacktestSummary } from "./services/historicalReplay.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -1383,6 +1384,7 @@ function formatHelpText() {
     "/paper_stats — paper trading simulation stats (DRY_RUN)",
     "/circuit_status — circuit breaker state and loss counters",
     "/devnet_report — devnet testing harness cycle results (T22)",
+    "/backtest_report — historical replay pipeline win rate summary (T23)",
     "/stop — shut down agent",
   ].join("\n");
 }
@@ -1787,6 +1789,32 @@ async function telegramHandler(msg) {
         lines.push(``, `Reason: ${s.trigger_reason ?? "unknown"}`);
         lines.push(`Triggered at: ${s.triggered_at ?? "unknown"}`);
         lines.push(``, `Use /resume to clear the circuit and resume deploying.`);
+      }
+      await sendMessage(lines.join("\n")).catch(() => {});
+    } catch (e) {
+      await sendMessage(`Error: ${e.message}`).catch(() => {});
+    }
+    return;
+  }
+
+  // Backtest report (T23)
+  if (text === "/backtest_report") {
+    try {
+      const s = getBacktestSummary(getDb());
+      const winRateStr = s.win_rate != null ? `${(s.win_rate * 100).toFixed(1)}%` : "n/a (no resolved outcomes)";
+      const lines = [
+        "Historical Replay Report",
+        "",
+        `Total scenarios: ${s.total}`,
+        `  Deploy decisions: ${s.deploy_decisions}  |  Skip decisions: ${s.skip_decisions}`,
+        "",
+        `Resolved outcomes: ${s.wins + s.losses}`,
+        `  Wins: ${s.wins}  |  Losses: ${s.losses}`,
+        `  Win rate: ${winRateStr}`,
+        `  Avg majority confidence: ${s.avg_majority_count != null ? s.avg_majority_count.toFixed(1) : "n/a"}/3`,
+      ];
+      if (s.total === 0) {
+        lines.push("", "No backtest data yet. Run historical replay to populate.");
       }
       await sendMessage(lines.join("\n")).catch(() => {});
     } catch (e) {
