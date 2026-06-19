@@ -714,16 +714,14 @@ IMPORTANT:
             if (process.env.DRY_RUN === "true" && deploySucceeded) {
               const poolAddr = args?.pool_address || result?.would_deploy?.pool_address;
               if (poolAddr) {
-                getActiveBin({ pool_address: poolAddr }).then((binData) => {
-                  openPaperPosition(getDb(), {
-                    pool_address: poolAddr,
-                    pool_name: args?.pool_name || null,
-                    entry_bin: binData?.binId ?? null,
-                    bins_below: result?.would_deploy?.bins_below ?? Number(args?.bins_below) || 0,
-                    bins_above: result?.would_deploy?.bins_above ?? Number(args?.bins_above) || 0,
-                    amount_sol: Number(args?.amount_y) || Number(args?.amount_sol) || config.management.deployAmountSol,
-                  });
-                }).catch((e) => log("paper_warn", `Failed to record paper position: ${e.message}`));
+                openPaperPosition(getDb(), {
+                  pool_address: poolAddr,
+                  pool_name: args?.pool_name || null,
+                  entry_bin: null,
+                  bins_below: (result?.would_deploy?.bins_below ?? Number(args?.bins_below)) || 0,
+                  bins_above: (result?.would_deploy?.bins_above ?? Number(args?.bins_above)) || 0,
+                  amount_sol: Number(args?.amount_y) || Number(args?.amount_sol) || config.management.deployAmountSol,
+                });
               }
             }
           }
