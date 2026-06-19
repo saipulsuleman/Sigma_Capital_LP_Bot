@@ -12,6 +12,7 @@
 import { config } from "./config.js";
 import { getDb } from "./db/db.js";
 import { getHotPositions } from "./services/positionMemory.js";
+import { log } from "./logger.js";
 
 export function buildSystemPrompt(agentType, portfolio, positions, stateSummary = null, lessons = null, perfSummary = null, weightsSummary = null, decisionSummary = null) {
   const s = config.screening;
@@ -112,7 +113,7 @@ To search deeper history, call query_position_memory.
 
 `;
       }
-    } catch { /* DB unavailable in test environments */ }
+    } catch (e) { log("memory_warn", `Hot positions unavailable: ${e.message}`); }
 
     return `You are an autonomous DLMM LP agent on Meteora, Solana. Role: SCREENER
 

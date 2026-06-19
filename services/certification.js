@@ -13,7 +13,7 @@
  *   6. circuit_breaker_tested   — triggered+cleared at least once (manual flag)
  */
 
-import { getPaperAnalytics, computeSharpe, getCombinedAnalytics } from "./analytics.js";
+import { getPaperAnalytics, computeSharpe, getCombinedAnalytics, MIN_SHARPE_SAMPLES } from "./analytics.js";
 import { getDevnetSummary } from "./devnetRunner.js";
 import { config } from "../config.js";
 import { getMeta, setMeta } from "../db/db.js";
@@ -53,11 +53,12 @@ function criterion(name, actual, required, status) {
  * @returns {{ all_passed: boolean, criteria: Array<criterion> }}
  */
 export function runCertification(db, certConfig = {}) {
+  const th = (k, def) => certConfig[k] ?? config.certification?.[k] ?? def;
   const thresholds = {
-    paper_win_rate_min:       certConfig.paperWinRateMin       ?? config.certification?.paperWinRateMin       ?? 0.5,
-    sharpe_min:               certConfig.sharpeMin             ?? config.certification?.sharpeMin             ?? 0.5,
-    devnet_tx_min:            certConfig.devnetTxMin           ?? config.certification?.devnetTxMin           ?? 10,
-    jest_tests_min:           certConfig.jestTestsMin          ?? config.certification?.jestTestsMin          ?? 80,
+    paper_win_rate_min:       th("paperWinRateMin", 0.5),
+    sharpe_min:               th("sharpeMin", 0.5),
+    devnet_tx_min:            th("devnetTxMin", 10),
+    jest_tests_min:           th("jestTestsMin", 80),
     conservative_mode_tested: true,
     circuit_breaker_tested:   true,
   };
@@ -73,7 +74,7 @@ export function runCertification(db, certConfig = {}) {
 
   // 2. Sharpe (waived if < 20 trades)
   const sharpeVal   = paper.sharpe;
-  const hasEnough   = paper.closed_count >= 20;
+  const hasEnough   = paper.closed_count >= MIN_SHARPE_SAMPLES;
   const sharpeStatus = !hasEnough ? "PENDING"
     : sharpeVal != null && sharpeVal >= thresholds.sharpe_min ? "PASS" : "FAIL";
 
@@ -96,7 +97,7 @@ export function runCertification(db, certConfig = {}) {
 
   const criteria = [
     criterion("paper_win_rate", `${(paperWinRate * 100).toFixed(1)}%`, `>=${(thresholds.paper_win_rate_min * 100).toFixed(0)}%`, paperStatus),
-    criterion("sharpe",         sharpeVal != null ? sharpeVal.toFixed(2) : hasEnough ? "n/a" : `waived (<20 trades, have ${paper.closed_count})`, `>=${thresholds.sharpe_min}`, hasEnough && sharpeVal != null ? sharpeStatus : "PASS"),
+    criterion("sharpe",         sharpeVal != null ? sharpeVal.toFixed(2) : hasEnough ? "n/a" : `waived (<20 trades, have ${paper.closed_count})`, `>=${thresholds.sharpe_min}`, !hasEnough ? "PASS" : sharpeStatus),
     criterion("devnet_cycles",  devnet.successful_cycles, `>=${thresholds.devnet_tx_min}`, devnetStatus),
     criterion("jest_tests",     jestCount ?? "unknown", `>=${thresholds.jest_tests_min}`, jestStatus),
     criterion("conservative_mode_tested", conservativeTested ? "yes" : "no", "yes", conservativeStatus),

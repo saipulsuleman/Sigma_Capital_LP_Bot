@@ -26,8 +26,10 @@ function holdingBucket(hours) {
  * @param {number[]} returns - Array of return values (pct or usd, consistent units)
  * @returns {number|null}
  */
+export const MIN_SHARPE_SAMPLES = 20;
+
 export function computeSharpe(returns) {
-  if (returns.length < 20) return null;
+  if (returns.length < MIN_SHARPE_SAMPLES) return null;
   const n = returns.length;
   const mean = returns.reduce((s, r) => s + r, 0) / n;
   const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / (n - 1);
@@ -135,11 +137,8 @@ export function getCombinedAnalytics(db) {
   const btWins  = backtestRows.filter((r) => r.actual_outcome === "win").length;
   const backtestWinRate = btTotal > 0 ? btWins / btTotal : null;
 
-  const combinedReturns = [
-    ...db.prepare("SELECT simulated_pnl_sol FROM paper_positions WHERE status = 'closed'").all()
-       .map((r) => r.simulated_pnl_sol ?? 0),
-    ...backtestRows.map((r) => r.fee_apy_7d ?? 0),
-  ];
+  const combinedReturns = db.prepare("SELECT simulated_pnl_sol FROM paper_positions WHERE status = 'closed'").all()
+    .map((r) => r.simulated_pnl_sol ?? 0);
 
   return {
     paper_win_rate: paper.win_rate,

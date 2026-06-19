@@ -87,7 +87,10 @@ export async function updatePaperPositions(db = getDb(), getActiveBinFn) {
         if (result) closed.push(result);
       }
     } catch (e) {
-      log("paper_warn", `OOR check failed for paper position ${pos.id}: ${e.message}`);
+      const hoursOpen = pos.entry_time
+        ? ((Date.now() - new Date(pos.entry_time).getTime()) / 3_600_000).toFixed(1)
+        : "?";
+      log("paper_warn", `OOR check failed for paper position ${pos.id} (open ${hoursOpen}h): ${e.message}`);
     }
   }
   return closed;

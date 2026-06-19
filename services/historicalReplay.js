@@ -54,7 +54,7 @@ export function recordBacktest(db, bt) {
  * @param {{ fee_apy_7d: number, oor_within_24h: number }} outcome
  */
 export function updateBacktestOutcome(db, id, { fee_apy_7d, oor_within_24h }) {
-  const actual_outcome = fee_apy_7d > 0 && !oor_within_24h ? "win" : "loss";
+  const actual_outcome = fee_apy_7d > 0 && oor_within_24h != null && !oor_within_24h ? "win" : "loss";
   db.prepare(`
     UPDATE backtests
     SET fee_apy_7d = ?, oor_within_24h = ?, actual_outcome = ?

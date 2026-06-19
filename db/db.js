@@ -87,5 +87,5 @@ export function getMeta(key, db = getDb()) {
 }
 
 export function setMeta(key, value, db = getDb()) {
-  db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES (?,?)").run(key, String(value));
+  db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES (?,?)").run(key, value == null ? null : String(value));
 }
