@@ -26,6 +26,7 @@ import fs from "fs";
 import { execSync, spawn } from "child_process";
 import { REPO_ROOT, repoPath } from "../repo-root.js";
 import { normalizeTimeframe, scaleScreeningToTimeframe } from "../screening-scales.js";
+import { incrementCounter, resetCounter } from "../db/db.js";
 
 const USER_CONFIG_PATH = repoPath("user-config.json");
 const POOL_DISCOVERY_BASE = "https://pool-discovery-api.datapi.meteora.ag";
@@ -178,6 +179,10 @@ async function validateDeployPoolThresholds(args) {
 // Registered by index.js so update_config can restart cron jobs when intervals change
 let _cronRestarter = null;
 export function registerCronRestarter(fn) { _cronRestarter = fn; }
+
+// Registered by index.js — fires after every 5 cumulative closes to trigger REVIEW agent (T15)
+let _closeHook = null;
+export function setCloseHook(fn) { _closeHook = fn; }
 
 function coerceBoolean(value, key) {
   if (typeof value === "boolean") return value;
@@ -620,6 +625,14 @@ export async function executeTool(name, args) {
           const poolAddr = result.pool || args.pool_address;
           if (poolAddr) addPoolNote({ pool_address: poolAddr, note: `Closed: low yield (fee/TVL below threshold) at ${new Date().toISOString().slice(0,10)}` }).catch?.(() => {});
         }
+        // Increment cumulative close counter; fire REVIEW hook every 5 closes (T15)
+        try {
+          const closeCount = incrementCounter("closes_since_review");
+          if (closeCount >= 5) {
+            resetCounter("closes_since_review");
+            if (_closeHook) _closeHook().catch(() => {});
+          }
+        } catch {}
         // Auto-swap base token back to SOL unless user said to hold
         if (!args.skip_swap && result.base_mint) {
           try {

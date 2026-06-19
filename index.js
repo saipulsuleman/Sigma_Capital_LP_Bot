@@ -10,7 +10,7 @@ import { getWalletBalances } from "./tools/wallet.js";
 import { getTopCandidates } from "./tools/screening.js";
 import { config, reloadScreeningThresholds, computeDeployAmount } from "./config.js";
 import { evolveThresholds, getPerformanceSummary } from "./lessons.js";
-import { executeTool, registerCronRestarter } from "./tools/executor.js";
+import { executeTool, registerCronRestarter, setCloseHook } from "./tools/executor.js";
 import {
   startPolling,
   stopPolling,
@@ -36,6 +36,7 @@ import { appendDecision } from "./decision-log.js";
 
 import { REPO_ROOT, repoPath } from "./repo-root.js";
 import { reconcilePositions } from "./services/reconcile.js";
+import { runReviewAgent } from "./services/reviewAgent.js";
 import { checkAllocation } from "./utils/allocation.js";
 import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js";
 
@@ -1694,6 +1695,8 @@ function computeBinsBelow(volatility) {
 
 // Register restarter — when update_config changes intervals, running cron jobs get replaced
 registerCronRestarter(() => { if (cronStarted) startCronJobs(); });
+// Register REVIEW hook — fires after every 5 cumulative closes (T15)
+setCloseHook(runReviewAgent);
 
 if (isMain && isTTY) {
   const rl = readline.createInterface({
