@@ -442,6 +442,9 @@ async function getPoolMetadata(poolAddress) {
 
 // ─── Get Active Bin ────────────────────────────────────────────
 export async function getActiveBin({ pool_address }) {
+  if (process.env.DRY_RUN === "true") {
+    return { binId: null, price: null, pricePerLamport: null, dry_run: true };
+  }
   pool_address = normalizeMint(pool_address);
   const pool = await getPool(pool_address);
   const activeBin = await pool.getActiveBin();
