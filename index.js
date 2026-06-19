@@ -48,6 +48,7 @@ import { archiveOldPositions } from "./services/positionMemory.js";
 import { getDevnetSummary, isDevnetMode } from "./services/devnetRunner.js";
 import { getBacktestSummary } from "./services/historicalReplay.js";
 import { getPaperAnalytics } from "./services/analytics.js";
+import { runCertification, markConservativeModeTested, markCircuitBreakerTested } from "./services/certification.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -1387,6 +1388,7 @@ function formatHelpText() {
     "/devnet_report — devnet testing harness cycle results (T22)",
     "/backtest_report — historical replay pipeline win rate summary (T23)",
     "/analytics — paper trading + backtest combined analytics (T24)",
+    "/certification — go-live readiness check (T25)",
     "/stop — shut down agent",
   ].join("\n");
 }
@@ -1791,6 +1793,34 @@ async function telegramHandler(msg) {
         lines.push(``, `Reason: ${s.trigger_reason ?? "unknown"}`);
         lines.push(`Triggered at: ${s.triggered_at ?? "unknown"}`);
         lines.push(``, `Use /resume to clear the circuit and resume deploying.`);
+      }
+      await sendMessage(lines.join("\n")).catch(() => {});
+    } catch (e) {
+      await sendMessage(`Error: ${e.message}`).catch(() => {});
+    }
+    return;
+  }
+
+  // Go-live certification (T25)
+  if (text === "/certification") {
+    try {
+      const { all_passed, criteria } = runCertification(getDb(), config.certification);
+      const lines = [
+        all_passed
+          ? "CERTIFICATION COMPLETE — Ready for go-live!"
+          : "Certification status:",
+        "",
+      ];
+      for (const c of criteria) {
+        const icon = c.status === "PASS" ? "✓" : c.status === "PENDING" ? "?" : "✗";
+        lines.push(`${icon} ${c.name}: ${c.actual} (need ${c.required}) [${c.status}]`);
+      }
+      if (all_passed) {
+        lines.push("", "Run: DRY_RUN=false pm2 restart sigma-bot");
+      } else {
+        const pending = criteria.filter((c) => c.status === "PENDING").length;
+        const failing = criteria.filter((c) => c.status === "FAIL").length;
+        lines.push("", `${failing} failing, ${pending} pending — not ready yet.`);
       }
       await sendMessage(lines.join("\n")).catch(() => {});
     } catch (e) {

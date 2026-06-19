@@ -217,6 +217,14 @@ export const config = {
     maxDrawdownPct:       u.circuitBreaker?.maxDrawdownPct       ?? 20,
   },
 
+  // ─── Go-Live Certification (T25) ────────
+  certification: {
+    paperWinRateMin: u.certification?.paperWinRateMin ?? 0.5,
+    sharpeMin:       u.certification?.sharpeMin       ?? 0.5,
+    devnetTxMin:     u.certification?.devnetTxMin     ?? 10,
+    jestTestsMin:    u.certification?.jestTestsMin    ?? 80,
+  },
+
   indicators: {
     enabled: indicatorUserConfig.enabled ?? false,
     entryPreset: indicatorUserConfig.entryPreset ?? "supertrend_break",
