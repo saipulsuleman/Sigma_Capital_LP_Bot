@@ -37,6 +37,7 @@ import { appendDecision } from "./decision-log.js";
 import { REPO_ROOT, repoPath } from "./repo-root.js";
 import { reconcilePositions } from "./services/reconcile.js";
 import { checkAllocation } from "./utils/allocation.js";
+import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -396,6 +397,13 @@ export async function runScreeningCycle({ silent = false } = {}) {
   try {
     [prePositions, preBalance] = await Promise.all([getMyPositions({ force: true }), getWalletBalances()]);
     const isDryRun = process.env.DRY_RUN === "true";
+
+    // Low-SOL alert: warn when balance is too low even for gas (T14)
+    if (!isDryRun && preBalance.sol < LOW_SOL_THRESHOLD) {
+      log("cron_warn", `Critical low SOL: ${preBalance.sol.toFixed(4)} SOL (< ${LOW_SOL_THRESHOLD} threshold)`);
+      sendMessage(`Low SOL alert: ${preBalance.sol.toFixed(4)} SOL remaining — below gas reserve. Refill wallet to resume.`).catch(() => {});
+    }
+
     const allocCheck = checkAllocation({
       openCount: prePositions.total_positions,
       solBalance: preBalance.sol,
@@ -411,6 +419,22 @@ export async function runScreeningCycle({ silent = false } = {}) {
         summary: "Screening skipped",
         reason: allocCheck.reason,
       });
+      _screeningBusy = false;
+      return screenReport;
+    }
+
+    // Daily token budget check: SCREENER paused if $5/day cap hit, MANAGER continues (T14)
+    const budgetCheck = checkBudget();
+    if (!budgetCheck.allowed) {
+      log("cron", `Screening skipped — ${budgetCheck.reason}`);
+      screenReport = `Screening skipped — ${budgetCheck.reason}.`;
+      appendDecision({
+        type: "skip",
+        actor: "SCREENER",
+        summary: "Daily budget exceeded",
+        reason: budgetCheck.reason,
+      });
+      sendMessage(`Daily token budget hit ($${budgetCheck.usage.cost_usd.toFixed(4)}/$${5}). SCREENER paused until UTC midnight.`).catch(() => {});
       _screeningBusy = false;
       return screenReport;
     }
@@ -796,7 +820,28 @@ Summarize the current portfolio health, total fees earned, and performance of al
     await reconcilePositions().catch((e) => log("reconcile_error", `Periodic reconciliation failed: ${e.message}`));
   });
 
-  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog, reconcileTask];
+  // Heartbeat every 4 hours (T14)
+  const heartbeatTask = cron.schedule("0 */4 * * *", async () => {
+    try {
+      const [balance, positions] = await Promise.all([
+        getWalletBalances(),
+        getMyPositions({ force: false }).catch(() => ({ total_positions: 0 })),
+      ]);
+      const usage = getDailyUsage();
+      const inK = Math.round((usage.tokens_in) / 1000);
+      const outK = Math.round((usage.tokens_out) / 1000);
+      await sendMessage(
+        `Heartbeat ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC\n` +
+        `Positions: ${positions.total_positions ?? 0}\n` +
+        `SOL: ${(balance.sol ?? 0).toFixed(4)}\n` +
+        `Tokens today: ${inK}K in / ${outK}K out ($${usage.cost_usd.toFixed(4)})`
+      );
+    } catch (e) {
+      log("heartbeat_error", `Heartbeat failed: ${e.message}`);
+    }
+  });
+
+  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog, reconcileTask, heartbeatTask];
   // Store interval ref so stopCronJobs can clear it
   _cronTasks._pnlPollInterval = pnlPollInterval;
   log("cron", `Cycles started — management every ${config.schedule.managementIntervalMin}m, screening every ${config.schedule.screeningIntervalMin}m`);
