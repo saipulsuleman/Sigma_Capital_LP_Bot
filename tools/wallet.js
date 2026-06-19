@@ -109,9 +109,17 @@ export async function getWalletBalances() {
     };
   } catch (error) {
     log("wallet_error", error.message);
+    // Helius REST API failed — fall back to RPC for SOL balance so deploy amount is correct
+    let solBalance = 0;
+    try {
+      const lamports = await getConnection().getBalance(new PublicKey(walletAddress));
+      solBalance = Math.round((lamports / LAMPORTS_PER_SOL) * 1e6) / 1e6;
+    } catch {
+      // RPC fallback also failed — sol stays 0
+    }
     return {
       wallet: walletAddress,
-      sol: 0,
+      sol: solBalance,
       sol_price: 0,
       sol_usd: 0,
       usdc: 0,
