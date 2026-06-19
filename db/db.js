@@ -24,6 +24,20 @@ export function applySchema(db) {
   db.exec(sql);
 }
 
+/**
+ * Additive migrations for existing DBs.
+ * Each migration is idempotent — catches "duplicate column" errors silently.
+ * Called after applySchema() so new DBs already have the columns.
+ */
+export function runMigrations(db) {
+  const addColumns = [
+    "ALTER TABLE positions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+  ];
+  for (const sql of addColumns) {
+    try { db.exec(sql); } catch { /* column already exists */ }
+  }
+}
+
 // ─── App-level singleton ──────────────────────────────────────────
 
 let _db = null;
@@ -32,6 +46,7 @@ export function getDb() {
   if (!_db) {
     _db = openDb();
     applySchema(_db);
+    runMigrations(_db);
   }
   return _db;
 }

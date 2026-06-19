@@ -10,6 +10,8 @@
  * @returns {string} - Complete system prompt
  */
 import { config } from "./config.js";
+import { getDb } from "./db/db.js";
+import { getHotPositions } from "./services/positionMemory.js";
 
 export function buildSystemPrompt(agentType, portfolio, positions, stateSummary = null, lessons = null, perfSummary = null, weightsSummary = null, decisionSummary = null) {
   const s = config.screening;
@@ -95,6 +97,23 @@ Current screening timeframe: ${config.screening.timeframe} — interpret all non
 `;
 
   if (agentType === "SCREENER") {
+    let hotMemoryBlock = "";
+    try {
+      const hotPositions = getHotPositions(getDb(), 5);
+      if (hotPositions.length > 0) {
+        hotMemoryBlock = `
+═══════════════════════════════════════════
+ RECENT POSITION MEMORY (last ${hotPositions.length} closed)
+═══════════════════════════════════════════
+${JSON.stringify(hotPositions, null, 2)}
+
+Use this as context: avoid pool types that consistently lost, prefer patterns that won.
+To search deeper history, call query_position_memory.
+
+`;
+      }
+    } catch { /* DB unavailable in test environments */ }
+
     return `You are an autonomous DLMM LP agent on Meteora, Solana. Role: SCREENER
 
 All candidates are pre-loaded. Your job: pick the highest-conviction candidate and call deploy_position. active_bin is pre-fetched.
@@ -125,7 +144,7 @@ DEPLOY RULES:
 - Bin steps must be [80-125].
 - Pick ONE pool only when conviction is real. If only one weak candidate survives, skip and explain why none qualify.
 
-${weightsSummary ? `${weightsSummary}\nPrioritize candidates whose strongest attributes align with high-weight signals.\n\n` : ""}${lessons ? `LESSONS LEARNED:\n${lessons}\n` : ""}Timestamp: ${new Date().toISOString()}
+${hotMemoryBlock}${weightsSummary ? `${weightsSummary}\nPrioritize candidates whose strongest attributes align with high-weight signals.\n\n` : ""}${lessons ? `LESSONS LEARNED:\n${lessons}\n` : ""}Timestamp: ${new Date().toISOString()}
 `;
   } else if (agentType === "MANAGER") {
     basePrompt += `

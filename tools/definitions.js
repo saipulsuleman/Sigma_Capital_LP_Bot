@@ -66,6 +66,46 @@ If this returns one candidate, still judge whether it is actually worth deployin
     }
   },
 
+  // ─── Position Memory (T21) ────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "query_position_memory",
+      description: `Search historical closed positions in the Cold Storage tier (6–90 days old).
+The last 5 positions are always injected into your prompt (Hot tier) — call this only when you want to search deeper history.
+
+Use cases:
+- "Have we had success in MEME-SOL pools?" → pool_name: "MEME"
+- "What happened to positions we closed as losses?" → outcome: "loss"
+- "Show recent closes from last 48 hours" → hours_back: 48
+
+Returns at most 20 results ordered newest-first (default 5).
+Positions archived >90 days ago are excluded (Forgotten tier).`,
+      parameters: {
+        type: "object",
+        properties: {
+          pool_name: {
+            type: "string",
+            description: "Partial match on pool name (case-insensitive). E.g. 'BONK' finds 'BONK-SOL'."
+          },
+          outcome: {
+            type: "string",
+            enum: ["win", "loss"],
+            description: "'win' = pnl_usd > 0, 'loss' = pnl_usd <= 0"
+          },
+          hours_back: {
+            type: "number",
+            description: "Only include positions closed within this many hours. Omit for all time."
+          },
+          limit: {
+            type: "number",
+            description: "Max results (1–20). Default 5."
+          }
+        }
+      }
+    }
+  },
+
   // ─── Market Intelligence (T19) ─────────────────────────────────────────────
   {
     type: "function",

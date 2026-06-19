@@ -1,4 +1,5 @@
 -- Closed positions analytics (migrated from lessons.json → performance array)
+-- status: 'active' (default) | 'archived' (closed >90 days ago — excluded from hot/cold layers)
 CREATE TABLE IF NOT EXISTS positions (
   id          TEXT PRIMARY KEY,
   position    TEXT,
@@ -13,7 +14,8 @@ CREATE TABLE IF NOT EXISTS positions (
   close_reason TEXT,
   deployed_at TEXT,
   closed_at   TEXT,
-  raw         TEXT NOT NULL
+  raw         TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'active'
 );
 
 -- Agent decisions (migrated from decision-log.json → decisions array)

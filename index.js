@@ -44,6 +44,7 @@ import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js
 import { isConservativeMode, recordApiSuccess } from "./utils/conservative.js";
 import { openPaperPosition, updatePaperPositions, getPaperStats } from "./services/paperTrading.js";
 import { getCircuitStatus, resetCircuit, initCircuit } from "./utils/circuitBreaker.js";
+import { archiveOldPositions } from "./services/positionMemory.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -894,6 +895,16 @@ Summarize the current portfolio health, total fees earned, and performance of al
     }
   });
 
+  // Archive positions closed >90 days ago (T21 Forgotten tier) — daily at 00:05 UTC
+  const archiveTask = cron.schedule("5 0 * * *", () => {
+    try {
+      const count = archiveOldPositions(getDb(), 90);
+      if (count > 0) log("memory", `Archived ${count} old position(s) (>90 days)`);
+    } catch (e) {
+      log("memory_error", `Position archive failed: ${e.message}`);
+    }
+  }, { timezone: "UTC" });
+
   // Paper trading OOR check — runs every management interval, only in DRY_RUN mode (T18)
   const paperTradingTask = cron.schedule(`*/${Math.max(1, config.schedule.managementIntervalMin)} * * * *`, async () => {
     if (process.env.DRY_RUN !== "true") return;
@@ -907,7 +918,7 @@ Summarize the current portfolio health, total fees earned, and performance of al
     }
   });
 
-  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog, reconcileTask, heartbeatTask, conservativeProbeTask, paperTradingTask];
+  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog, reconcileTask, heartbeatTask, conservativeProbeTask, archiveTask, paperTradingTask];
   // Store interval ref so stopCronJobs can clear it
   _cronTasks._pnlPollInterval = pnlPollInterval;
   log("cron", `Cycles started — management every ${config.schedule.managementIntervalMin}m, screening every ${config.schedule.screeningIntervalMin}m`);

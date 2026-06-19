@@ -21,6 +21,7 @@ import { blockDev, unblockDev, listBlockedDevs } from "../dev-blocklist.js";
 import { addSmartWallet, removeSmartWallet, listSmartWallets, checkSmartWalletsOnPool } from "../smart-wallets.js";
 import { getTokenInfo, getTokenHolders, getTokenNarrative } from "./token.js";
 import { getTokenMarketData } from "./marketData.js";
+import { queryPositionMemory } from "../services/positionMemory.js";
 import { config, reloadScreeningThresholds, MIN_SAFE_BINS_BELOW } from "../config.js";
 import { getRecentDecisions } from "../decision-log.js";
 import fs from "fs";
@@ -260,6 +261,8 @@ const toolMap = {
   get_token_holders: getTokenHolders,
   get_token_narrative: getTokenNarrative,
   get_token_market_data: getTokenMarketData,
+  query_position_memory: ({ pool_name, outcome, hours_back, limit } = {}) =>
+    queryPositionMemory(getDb(), { pool_name, outcome, hours_back, limit }),
   add_smart_wallet: addSmartWallet,
   remove_smart_wallet: removeSmartWallet,
   list_smart_wallets: listSmartWallets,
