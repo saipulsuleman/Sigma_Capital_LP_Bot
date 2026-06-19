@@ -34,11 +34,14 @@ import { stageSignals } from "./signal-tracker.js";
 import { getWeightsSummary } from "./signal-weights.js";
 import { appendDecision } from "./decision-log.js";
 
+import fs from "fs";
 import { REPO_ROOT, repoPath } from "./repo-root.js";
+import { getDb } from "./db/db.js";
 import { reconcilePositions } from "./services/reconcile.js";
 import { runReviewAgent } from "./services/reviewAgent.js";
 import { checkAllocation } from "./utils/allocation.js";
 import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js";
+import { isConservativeMode } from "./utils/conservative.js";
 
 const entrypointPath = process.env.pm_exec_path || process.argv[1];
 const indexPath = fileURLToPath(import.meta.url);
@@ -436,6 +439,16 @@ export async function runScreeningCycle({ silent = false } = {}) {
         reason: budgetCheck.reason,
       });
       sendMessage(`Daily token budget hit ($${budgetCheck.usage.cost_usd.toFixed(4)}/$${5}). SCREENER paused until UTC midnight.`).catch(() => {});
+      _screeningBusy = false;
+      return screenReport;
+    }
+
+    // Conservative mode: skip SCREENER when API has 3+ consecutive errors (T17)
+    if (isConservativeMode()) {
+      log("cron", "Conservative mode: SCREENER paused (3+ consecutive API errors)");
+      screenReport = "Conservative mode: SCREENER paused — too many consecutive API errors. MANAGER still runs.";
+      appendDecision({ type: "skip", actor: "SCREENER", summary: "Conservative mode", reason: "3+ consecutive DeepSeek API errors" });
+      sendMessage("Conservative mode: SCREENER paused (3 consecutive API errors). Monitoring positions only.").catch(() => {});
       _screeningBusy = false;
       return screenReport;
     }
@@ -842,7 +855,23 @@ Summarize the current portfolio health, total fees earned, and performance of al
     }
   });
 
-  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog, reconcileTask, heartbeatTask];
+  // Conservative mode health probe: every 5 min, test API and auto-recover if back (T17)
+  const conservativeProbeTask = cron.schedule("*/5 * * * *", async () => {
+    if (!isConservativeMode()) return;
+    log("cron", "Conservative mode: running API health probe");
+    try {
+      await agentLoop("health probe", 1, [], "GENERAL", config.llm.generalModel, 10);
+      // recordApiSuccess() fires inside agentLoop on success — check if we exited conservative mode
+      if (!isConservativeMode()) {
+        log("cron", "Conservative mode: API recovered — resuming normal operations");
+        sendMessage("DeepSeek API recovered — exiting conservative mode. Resuming normal operations.").catch(() => {});
+      }
+    } catch {
+      log("cron", "Conservative mode: health probe failed — still in safe mode");
+    }
+  });
+
+  _cronTasks = [mgmtTask, screenTask, healthTask, briefingTask, briefingWatchdog, reconcileTask, heartbeatTask, conservativeProbeTask];
   // Store interval ref so stopCronJobs can clear it
   _cronTasks._pnlPollInterval = pnlPollInterval;
   log("cron", `Cycles started — management every ${config.schedule.managementIntervalMin}m, screening every ${config.schedule.screeningIntervalMin}m`);
@@ -1301,6 +1330,8 @@ function formatHelpText() {
     "/briefing — morning briefing",
     "/pause — stop cron cycles",
     "/resume — start cron cycles again",
+    "/skills — list pending and approved skill files",
+    "/approve_skill <file> — approve and activate a pending skill",
     "/stop — shut down agent",
   ].join("\n");
 }
@@ -1605,6 +1636,53 @@ async function telegramHandler(msg) {
       ].filter(Boolean).join("\n")).catch(() => {});
     } catch (e) {
       await sendMessage(`Error: ${e.message}`).catch(() => {});
+    }
+    return;
+  }
+
+  // List pending and recently approved skill files (T16)
+  if (text === "/skills") {
+    try {
+      const db = getDb();
+      const pending = db.prepare("SELECT filename, created_at FROM skills WHERE status='pending' ORDER BY created_at DESC").all();
+      const approved = db.prepare("SELECT filename, approved_at FROM skills WHERE status='approved' ORDER BY approved_at DESC LIMIT 5").all();
+      const lines = [];
+      if (pending.length) {
+        lines.push(`Pending approval (${pending.length}):`);
+        for (const r of pending) lines.push(`  ${r.filename}`);
+        lines.push("\nApprove with: /approve_skill <filename>");
+      } else {
+        lines.push("No skills pending approval.");
+      }
+      if (approved.length) {
+        lines.push(`\nRecently approved (${approved.length}):`);
+        for (const r of approved) lines.push(`  ${r.filename}`);
+      }
+      await sendMessage(lines.join("\n")).catch(() => {});
+    } catch (e) {
+      await sendMessage(`Error: ${e.message}`).catch(() => {});
+    }
+    return;
+  }
+
+  // Approve a pending skill file: move pending/ → active/, update SQLite (T16)
+  const approveMatch = text.match(/^\/approve_skill\s+(\S+)$/i);
+  if (approveMatch) {
+    try {
+      const filename = path.basename(approveMatch[1]); // strip path traversal
+      const pendingPath = path.join(repoPath("skills/pending"), filename);
+      const activePath = path.join(repoPath("skills/active"), filename);
+      if (!fs.existsSync(pendingPath)) {
+        await sendMessage(`Not found in skills/pending/: ${filename}`).catch(() => {});
+        return;
+      }
+      fs.renameSync(pendingPath, activePath);
+      const db = getDb();
+      db.prepare("UPDATE skills SET status='approved', approved_at=? WHERE filename=?")
+        .run(new Date().toISOString(), filename);
+      await sendMessage(`Skill approved and moved to active:\n${filename}`).catch(() => {});
+    } catch (e) {
+      await sendMessage(`Error approving skill: ${e.message}`).catch(() => {});
     }
     return;
   }

@@ -4,6 +4,7 @@ import { buildSystemPrompt } from "./prompt.js";
 import { executeTool } from "./tools/executor.js";
 import { tools } from "./tools/definitions.js";
 import { recordUsage } from "./utils/budget.js";
+import { recordApiSuccess, recordApiError } from "./utils/conservative.js";
 
 const MANAGER_TOOLS  = new Set(["close_position", "claim_fees", "swap_token", "get_position_pnl", "get_my_positions", "get_wallet_balance", "get_wallet_positions"]);
 const SCREENER_TOOLS = new Set(["deploy_position", "get_active_bin", "get_top_candidates", "check_smart_wallets_on_pool", "get_token_holders", "get_token_narrative", "get_token_info", "search_pools", "get_pool_memory", "get_wallet_balance", "get_my_positions"]);
@@ -257,6 +258,7 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
         throw new Error(`API returned no choices: ${response.error?.message || JSON.stringify(response)}`);
       }
       try { recordUsage(usedModel, response.usage?.prompt_tokens ?? 0, response.usage?.completion_tokens ?? 0); } catch {}
+      try { recordApiSuccess(); } catch {}
       const msg = response.choices[0].message;
       const invalidToolArgErrors = new Map();
       // Keep tool-call history API-valid, but never execute unrecoverable args.
@@ -405,6 +407,7 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
       }
 
       // For other errors, break the loop
+      try { recordApiError(); } catch {}
       throw error;
     }
   }
