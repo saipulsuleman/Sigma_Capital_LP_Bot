@@ -21,6 +21,7 @@ export function openPaperPosition(db = getDb(), {
   strategy = null,
   reasoning_summary = null,
   fee_rate_24h = null,  // fee_tvl_ratio (%) from pool at deploy time — used for realistic fee simulation
+  position_type = "unknown",  // "stable" | "meme" | "unknown" from dual screening slot
 } = {}) {
   if (!pool_address) throw new Error("pool_address is required");
   if (!amount_sol || amount_sol <= 0) throw new Error("amount_sol must be positive");
@@ -30,9 +31,9 @@ export function openPaperPosition(db = getDb(), {
 
   db.prepare(`
     INSERT INTO paper_positions
-      (id, pool_address, pool_name, strategy, entry_bin, bins_below, bins_above, amount_sol, entry_fee_rate_24h, reasoning_summary)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, pool_address, pool_name ?? null, strategy ?? null, entry_bin ?? null, bins_below, bins_above, amount_sol, parsedFeeRate, reasoning_summary ?? null);
+      (id, pool_address, pool_name, strategy, entry_bin, bins_below, bins_above, amount_sol, entry_fee_rate_24h, reasoning_summary, position_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, pool_address, pool_name ?? null, strategy ?? null, entry_bin ?? null, bins_below, bins_above, amount_sol, parsedFeeRate, reasoning_summary ?? null, position_type);
 
   const feeNote = parsedFeeRate != null
     ? ` fee_rate=${parsedFeeRate}%/24h → est ${(amount_sol * parsedFeeRate / 100).toFixed(5)} SOL/24h if in range`

@@ -381,8 +381,9 @@ async function refreshDiscordOnlyPools(pools, timeframe) {
  */
 export async function discoverPools({
   page_size = 50,
+  screeningOverrides = null,
 } = {}) {
-  const s = config.screening;
+  const s = screeningOverrides ? { ...config.screening, ...screeningOverrides } : config.screening;
   const filters = [
     "base_token_has_critical_warnings=false",
     "quote_token_has_critical_warnings=false",
@@ -541,9 +542,9 @@ export async function discoverPools({
  * Returns eligible pools for the agent to evaluate and pick from.
  * Hard filters applied in code, agent decides which to deploy into.
  */
-export async function getTopCandidates({ limit = 10 } = {}) {
+export async function getTopCandidates({ limit = 10, screeningOverrides = null } = {}) {
   const { config } = await import("../config.js");
-  const discovery = await discoverPools({ page_size: 50 });
+  const discovery = await discoverPools({ page_size: 50, screeningOverrides });
   const { pools } = discovery;
   const filteredOut = Array.isArray(discovery.filtered_examples) ? [...discovery.filtered_examples] : [];
 
@@ -552,9 +553,10 @@ export async function getTopCandidates({ limit = 10 } = {}) {
   const { positions } = await getMyPositions();
   const occupiedPools = new Set(positions.map((p) => p.pool));
   const occupiedMints = new Set(positions.map((p) => p.base_mint).filter(Boolean));
-  const minTvl = Number(config.screening.minTvl ?? 0);
-  const maxTvl = config.screening.maxTvl == null ? null : Number(config.screening.maxTvl);
-  const minFeeActiveTvlRatio = Number(config.screening.minFeeActiveTvlRatio ?? 0);
+  const screeningCfg = screeningOverrides ? { ...config.screening, ...screeningOverrides } : config.screening;
+  const minTvl = Number(screeningCfg.minTvl ?? 0);
+  const maxTvl = screeningCfg.maxTvl == null ? null : Number(screeningCfg.maxTvl);
+  const minFeeActiveTvlRatio = Number(screeningCfg.minFeeActiveTvlRatio ?? 0);
 
   const eligible = pools
     .filter((p) => {

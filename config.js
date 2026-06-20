@@ -102,6 +102,8 @@ export const config = {
     maxTokenAgeHours:   u.maxTokenAgeHours   ?? null, // null = no maximum
   },
 
+  hybridScreening: u.hybridScreening ?? null,
+
   // ─── Position Management ────────────────
   management: {
     minClaimAmount:        u.minClaimAmount        ?? 5,

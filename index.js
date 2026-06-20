@@ -500,10 +500,35 @@ export async function runScreeningCycle({ silent = false } = {}) {
     const strategyBlock = `DEPLOY STRATEGY: ${deployStrategy} (from config) | bins_above: 0 (FIXED — never change) | deposit: SOL only (amount_y, amount_x=0)`
       + (activeStrategy ? `\nSTRATEGY CONTEXT: ${activeStrategy.name} — entry: ${activeStrategy.entry?.condition || "n/a"} | exit: ${activeStrategy.exit?.notes || "n/a"} | best for: ${activeStrategy.best_for}` : "");
 
-    // Fetch top candidates, then recon each sequentially with a small delay to avoid 429s
-    const topCandidates = await getTopCandidates({ limit: 10 }).catch(() => null);
-    const candidates = (topCandidates?.candidates || topCandidates?.pools || []).slice(0, 10);
-    const earlyFilteredExamples = topCandidates?.filtered_examples || [];
+    // Dual screening: stable (30m, age≥24h, TVL≥$50k) + meme (5m, age≥2h) fetched in parallel
+    const hybridCfg = config.hybridScreening;
+    let candidates = [];
+    let earlyFilteredExamples = [];
+
+    if (hybridCfg?.stable && hybridCfg?.meme) {
+      const [stableResult, memeResult] = await Promise.allSettled([
+        getTopCandidates({ limit: 5, screeningOverrides: hybridCfg.stable }),
+        getTopCandidates({ limit: 5, screeningOverrides: hybridCfg.meme }),
+      ]);
+      const stablePools = (stableResult.status === "fulfilled" ? (stableResult.value?.candidates || []) : [])
+        .map(p => ({ ...p, _slotType: "stable" }));
+      const seenPools = new Set(stablePools.map(p => p.pool));
+      const memePools = (memeResult.status === "fulfilled" ? (memeResult.value?.candidates || []) : [])
+        .filter(p => !seenPools.has(p.pool))
+        .map(p => ({ ...p, _slotType: "meme" }));
+      candidates = [...stablePools, ...memePools].slice(0, 10);
+      earlyFilteredExamples = [
+        ...(stableResult.status === "fulfilled" ? (stableResult.value?.filtered_examples || []) : []),
+        ...(memeResult.status === "fulfilled" ? (memeResult.value?.filtered_examples || []) : []),
+      ];
+    } else {
+      const topCandidates = await getTopCandidates({ limit: 10 }).catch(() => null);
+      candidates = (topCandidates?.candidates || topCandidates?.pools || []).map(p => ({ ...p, _slotType: "unknown" }));
+      earlyFilteredExamples = topCandidates?.filtered_examples || [];
+    }
+
+    // Map pool address → slot type for paper trading record
+    const slotTypeMap = new Map(candidates.map(p => [p.pool, p._slotType ?? "unknown"]));
 
     const allCandidates = [];
     for (const pool of candidates) {
@@ -618,6 +643,7 @@ export async function runScreeningCycle({ silent = false } = {}) {
 
       const block = [
         `POOL: ${pool.name} (${pool.pool})`,
+        pool._slotType ? `  type: ${pool._slotType}` : null,
         `  metrics: bin_step=${pool.bin_step}, fee_pct=${pool.fee_pct}%, fee_tvl=${pool.fee_active_tvl_ratio}, vol=$${pool.volume_window}, tvl=$${pool.tvl ?? pool.active_tvl}, volatility_${pool.volatility_timeframe || "30m"}=${pool.volatility}, mcap=$${pool.mcap}, organic=${pool.organic_score}${pool.token_age_hours != null ? `, age=${pool.token_age_hours}h` : ""}`,
         `  audit: top10=${top10Pct}%, bots=${botPct}%, fees=${feesSol}SOL${launchpad ? `, launchpad=${launchpad}` : ""}`,
         pvpLine,
@@ -738,6 +764,7 @@ IMPORTANT:
                   bins_above: (result?.would_deploy?.bins_above ?? Number(args?.bins_above)) || 0,
                   amount_sol: Number(args?.amount_y) || Number(args?.amount_sol) || config.management.deployAmountSol,
                   fee_rate_24h: args?.fee_tvl_ratio != null ? Number(args.fee_tvl_ratio) : null,
+                  position_type: slotTypeMap.get(poolAddr) ?? "unknown",
                 });
               }
             }
