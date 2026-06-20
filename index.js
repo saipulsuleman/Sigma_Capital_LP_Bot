@@ -233,6 +233,16 @@ export async function runManagementCycle({ silent = false } = {}) {
     positions = livePositions?.positions || [];
 
     if (positions.length === 0) {
+      if (process.env.DRY_RUN === "true") {
+        const paperCount = getDb()
+          .prepare("SELECT COUNT(*) as c FROM paper_positions WHERE status='open'")
+          .get()?.c ?? 0;
+        if (paperCount > 0) {
+          log("cron", `DRY RUN — monitoring ${paperCount} paper position(s); OOR check runs separately`);
+          mgmtReport = `Monitoring ${paperCount} paper position(s) (DRY RUN). OOR detection active.`;
+          return mgmtReport;
+        }
+      }
       log("cron", "No open positions — triggering screening cycle");
       mgmtReport = "No open positions. Triggering screening cycle.";
       runScreeningCycle().catch((e) => log("cron_error", `Triggered screening failed: ${e.message}`));
