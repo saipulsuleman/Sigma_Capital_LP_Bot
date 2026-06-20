@@ -417,8 +417,11 @@ export async function runScreeningCycle({ silent = false } = {}) {
       sendMessage(`Low SOL alert: ${preBalance.sol.toFixed(4)} SOL remaining — below gas reserve. Refill wallet to resume.`).catch(() => {});
     }
 
+    const openCount = isDryRun
+      ? (getDb().prepare("SELECT COUNT(*) as c FROM paper_positions WHERE status='open'").get()?.c ?? 0)
+      : prePositions.total_positions;
     const allocCheck = checkAllocation({
-      openCount: prePositions.total_positions,
+      openCount,
       solBalance: preBalance.sol,
       cfg: config,
       isDryRun,
