@@ -529,6 +529,9 @@ export async function runScreeningCycle({ silent = false } = {}) {
 
     // Map pool address → slot type for paper trading record
     const slotTypeMap = new Map(candidates.map(p => [p.pool, p._slotType ?? "unknown"]));
+    const stableCount = candidates.filter(p => p._slotType === "stable").length;
+    const memeCount = candidates.filter(p => p._slotType === "meme").length;
+    log("screening", `Dual screening: ${stableCount} stable + ${memeCount} meme = ${candidates.length} total candidates`);
 
     const allCandidates = [];
     for (const pool of candidates) {
