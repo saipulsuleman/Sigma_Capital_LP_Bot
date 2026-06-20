@@ -32,6 +32,7 @@ export function applySchema(db) {
 export function runMigrations(db) {
   const addColumns = [
     "ALTER TABLE positions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+    "ALTER TABLE paper_positions ADD COLUMN entry_fee_rate_24h REAL",
   ];
   for (const sql of addColumns) {
     try { db.exec(sql); } catch { /* column already exists */ }

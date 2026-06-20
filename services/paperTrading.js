@@ -1,7 +1,10 @@
 import { getDb } from "../db/db.js";
 import { log } from "../logger.js";
 
-/** Simulated hourly fee rate: 0.02% per hour ≈ 175% APY (optimistic — good active pool). */
+/**
+ * Fallback hourly fee rate used when pool's real fee_tvl_ratio is unavailable.
+ * 0.02%/hr ≈ 175% APY — conservative baseline. Real pools vary: 0.04%–0.5%/hr.
+ */
 export const PAPER_HOURLY_FEE_RATE = 0.0002;
 
 /**
@@ -17,18 +20,24 @@ export function openPaperPosition(db = getDb(), {
   amount_sol,
   strategy = null,
   reasoning_summary = null,
+  fee_rate_24h = null,  // fee_tvl_ratio (%) from pool at deploy time — used for realistic fee simulation
 } = {}) {
   if (!pool_address) throw new Error("pool_address is required");
   if (!amount_sol || amount_sol <= 0) throw new Error("amount_sol must be positive");
 
   const id = `${pool_address}_${Date.now()}`;
+  const parsedFeeRate = fee_rate_24h != null && Number.isFinite(Number(fee_rate_24h)) ? Number(fee_rate_24h) : null;
+
   db.prepare(`
     INSERT INTO paper_positions
-      (id, pool_address, pool_name, strategy, entry_bin, bins_below, bins_above, amount_sol, reasoning_summary)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, pool_address, pool_name ?? null, strategy ?? null, entry_bin ?? null, bins_below, bins_above, amount_sol, reasoning_summary ?? null);
+      (id, pool_address, pool_name, strategy, entry_bin, bins_below, bins_above, amount_sol, entry_fee_rate_24h, reasoning_summary)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, pool_address, pool_name ?? null, strategy ?? null, entry_bin ?? null, bins_below, bins_above, amount_sol, parsedFeeRate, reasoning_summary ?? null);
 
-  log("paper", `Opened paper position: ${pool_name || pool_address} entry_bin=${entry_bin ?? "?"} bins=[${bins_below}↓ ${bins_above}↑] amount=${amount_sol} SOL`);
+  const feeNote = parsedFeeRate != null
+    ? ` fee_rate=${parsedFeeRate}%/24h → est ${(amount_sol * parsedFeeRate / 100).toFixed(5)} SOL/24h if in range`
+    : " fee_rate=fallback";
+  log("paper", `Opened paper position: ${pool_name || pool_address} entry_bin=${entry_bin ?? "?"} bins=[${bins_below}↓ ${bins_above}↑] amount=${amount_sol} SOL${feeNote}`);
   return id;
 }
 
@@ -44,7 +53,12 @@ export function closePaperPosition(db = getDb(), id, exit_reason = "oor") {
   const entryMs = new Date(pos.entry_time).getTime();
   const exitMs = Date.now();
   const hoursInRange = Math.max(0, (exitMs - entryMs) / 3_600_000);
-  const simulated_fee_sol = pos.amount_sol * PAPER_HOURLY_FEE_RATE * hoursInRange;
+  // Use real pool fee rate if stored, else fallback to constant.
+  // entry_fee_rate_24h is a percentage (e.g. 9.69 means 9.69% of position per 24h).
+  const hourlyRate = pos.entry_fee_rate_24h != null
+    ? (pos.entry_fee_rate_24h / 100) / 24
+    : PAPER_HOURLY_FEE_RATE;
+  const simulated_fee_sol = pos.amount_sol * hourlyRate * hoursInRange;
   // Single-side SOL deploy: no impermanent loss when in range, PnL = earned fees
   const simulated_pnl_sol = simulated_fee_sol;
 

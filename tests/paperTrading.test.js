@@ -130,6 +130,30 @@ describe("closePaperPosition (T18)", () => {
     assert.ok(result.simulated_fee_sol >= 0, "fee must be non-negative");
     assert.ok(result.simulated_fee_sol < 0.0001, "fee should be tiny for immediate close");
   });
+
+  test("uses real fee_rate_24h when provided — 2h hold at 9.69% fee/TVL", () => {
+    const db = makeTmpDb();
+    // Simulate ZERO-SOL style pool: 9.69% fee/TVL per 24h
+    const id = openPaperPosition(db, { pool_address: "pool-realfee-1", amount_sol: 0.15, fee_rate_24h: 9.69 });
+    db.prepare("UPDATE paper_positions SET entry_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 hours') WHERE id = ?").run(id);
+
+    const result = closePaperPosition(db, id, "oor");
+    // Expected: 0.15 × (9.69/100/24) × 2 = 0.15 × 0.004038 × 2 = 0.001211 SOL
+    const expected = 0.15 * (9.69 / 100 / 24) * 2;
+    assert.ok(Math.abs(result.simulated_fee_sol - expected) < 0.00001, `fee should use real rate: got ${result.simulated_fee_sol}, expected ~${expected.toFixed(6)}`);
+    // Real rate (9.69%/24h) should yield ~20x more than constant (0.0002/hr)
+    assert.ok(result.simulated_fee_sol > 0.15 * PAPER_HOURLY_FEE_RATE * 2, "real fee rate should exceed fallback constant");
+  });
+
+  test("falls back to PAPER_HOURLY_FEE_RATE when fee_rate_24h is null", () => {
+    const db = makeTmpDb();
+    const id = openPaperPosition(db, { pool_address: "pool-fallback-1", amount_sol: 0.15 }); // no fee_rate_24h
+    db.prepare("UPDATE paper_positions SET entry_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 hours') WHERE id = ?").run(id);
+
+    const result = closePaperPosition(db, id, "oor");
+    const expected = 0.15 * PAPER_HOURLY_FEE_RATE * 2;
+    assert.ok(Math.abs(result.simulated_fee_sol - expected) < 0.00001, "should use constant fallback when no real rate");
+  });
 });
 
 // ─── updatePaperPositions ─────────────────────────────────────────────────────

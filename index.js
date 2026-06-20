@@ -737,6 +737,7 @@ IMPORTANT:
                   bins_below: (result?.would_deploy?.bins_below ?? Number(args?.bins_below)) || 0,
                   bins_above: (result?.would_deploy?.bins_above ?? Number(args?.bins_above)) || 0,
                   amount_sol: Number(args?.amount_y) || Number(args?.amount_sol) || config.management.deployAmountSol,
+                  fee_rate_24h: args?.fee_tvl_ratio != null ? Number(args.fee_tvl_ratio) : null,
                 });
               }
             }
