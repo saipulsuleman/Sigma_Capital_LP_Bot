@@ -719,10 +719,11 @@ IMPORTANT:
             if (process.env.DRY_RUN === "true" && deploySucceeded) {
               const poolAddr = args?.pool_address || result?.would_deploy?.pool_address;
               if (poolAddr) {
+                const entryBinResult = await getActiveBin({ pool_address: poolAddr }).catch(() => ({ binId: null }));
                 openPaperPosition(getDb(), {
                   pool_address: poolAddr,
                   pool_name: args?.pool_name || null,
-                  entry_bin: null,
+                  entry_bin: entryBinResult.binId,
                   bins_below: (result?.would_deploy?.bins_below ?? Number(args?.bins_below)) || 0,
                   bins_above: (result?.would_deploy?.bins_above ?? Number(args?.bins_above)) || 0,
                   amount_sol: Number(args?.amount_y) || Number(args?.amount_sol) || config.management.deployAmountSol,

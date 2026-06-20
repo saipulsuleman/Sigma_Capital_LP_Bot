@@ -443,6 +443,27 @@ async function getPoolMetadata(poolAddress) {
 // ─── Get Active Bin ────────────────────────────────────────────
 export async function getActiveBin({ pool_address }) {
   if (process.env.DRY_RUN === "true") {
+    // SDK unavailable in DRY_RUN — compute bin ID from Meteora REST API price + bin_step
+    try {
+      const res = await fetch(`https://dlmm.datapi.meteora.ag/pools/${pool_address}`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const price = data.current_price;
+        const binStep = data.pool_config?.bin_step;
+        const tokenXDec = data.token_x?.decimals;
+        const tokenYDec = data.token_y?.decimals;
+        if (price != null && binStep != null && tokenXDec != null && tokenYDec != null) {
+          // pricePerLamport = price * 10^(decY - decX); binId = ln(ppl) / ln(1 + step/10000)
+          const ppl = price * Math.pow(10, tokenYDec - tokenXDec);
+          const binId = Math.round(Math.log(ppl) / Math.log(1 + binStep / 10000));
+          return { binId, price, pricePerLamport: ppl.toString() };
+        }
+      }
+    } catch {
+      // fall through to null return
+    }
     return { binId: null, price: null, pricePerLamport: null, dry_run: true };
   }
   pool_address = normalizeMint(pool_address);
