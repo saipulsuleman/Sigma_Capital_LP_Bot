@@ -54,9 +54,10 @@ CREATE TABLE IF NOT EXISTS skills (
 );
 
 -- Key-value counters.
--- Two distinct counters — NEVER share the same key for different purposes:
+-- Three distinct counters — NEVER share the same key for different purposes:
 --   consecutive_api_errors : reset on any DeepSeek success (conservative mode — T17)
 --   closes_since_review    : reset only after REVIEW agent runs (REVIEW trigger — T15)
+--   closes_since_compound  : reset after fee compound triggered (5 oor_down closes → compound)
 CREATE TABLE IF NOT EXISTS counters (
   key   TEXT PRIMARY KEY,
   value INTEGER NOT NULL DEFAULT 0

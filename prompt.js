@@ -149,6 +149,7 @@ DEPLOY RULES:
 - Use amount_y only, keep amount_x=0 and bins_above=0.
 - Bin steps must be [80-125].
 - Pick ONE pool only when conviction is real. If only one weak candidate survives, skip and explain why none qualify.
+- RANGE PLACEMENT: For single-sided LP (bins_above=0), bias toward MAX bins_below (close to maxBinsBelow=69). A wider range below current price means more room to earn fees before going OOR down. Prefer bins_below >= 55 unless volatility is very low.
 
 ${hotMemoryBlock}${weightsSummary ? `${weightsSummary}\nPrioritize candidates whose strongest attributes align with high-weight signals.\n\n` : ""}${lessons ? `LESSONS LEARNED:\n${lessons}\n` : ""}Timestamp: ${new Date().toISOString()}
 `;

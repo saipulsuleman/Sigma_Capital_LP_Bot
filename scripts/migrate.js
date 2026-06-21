@@ -81,6 +81,7 @@ export function runMigration(paths = buildPaths()) {
   // Step 2: initialize required counters (idempotent)
   setCounter("consecutive_api_errors", 0, db);
   setCounter("closes_since_review", 0, db);
+  setCounter("closes_since_compound", 0, db);
 
   // Step 3: load source data
   const lessonsData = readJson(lessonsPath, { lessons: [], performance: [] });

@@ -60,7 +60,7 @@ export function closeDb() {
 }
 
 // ─── Counter helpers ──────────────────────────────────────────────
-// Use for: consecutive_api_errors, closes_since_review
+// Use for: consecutive_api_errors, closes_since_review, closes_since_compound
 
 export function getCounter(key, db = getDb()) {
   const row = db.prepare("SELECT value FROM counters WHERE key = ?").get(key);

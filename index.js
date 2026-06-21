@@ -36,7 +36,7 @@ import { appendDecision } from "./decision-log.js";
 
 import fs from "fs";
 import { REPO_ROOT, repoPath } from "./repo-root.js";
-import { getDb } from "./db/db.js";
+import { getDb, getMeta, setMeta, incrementCounter, resetCounter } from "./db/db.js";
 import { reconcilePositions } from "./services/reconcile.js";
 import { runReviewAgent } from "./services/reviewAgent.js";
 import { checkAllocation } from "./utils/allocation.js";
@@ -759,13 +759,21 @@ IMPORTANT:
               const poolAddr = args?.pool_address || result?.would_deploy?.pool_address;
               if (poolAddr) {
                 const entryBinResult = await getActiveBin({ pool_address: poolAddr }).catch(() => ({ binId: null }));
-                openPaperPosition(getDb(), {
+                const db = getDb();
+                const baseAmount = Number(args?.amount_y) || Number(args?.amount_sol) || config.management.deployAmountSol;
+                const pendingCompound = Number(getMeta("pending_compound_sol", db) ?? 0);
+                const deployAmount = baseAmount + pendingCompound;
+                if (pendingCompound > 0) {
+                  setMeta("pending_compound_sol", 0, db);
+                  log("paper", `Compounding ${pendingCompound.toFixed(6)} SOL → deploy ${deployAmount.toFixed(6)} SOL total`);
+                }
+                openPaperPosition(db, {
                   pool_address: poolAddr,
                   pool_name: args?.pool_name || null,
                   entry_bin: entryBinResult.binId,
                   bins_below: (result?.would_deploy?.bins_below ?? Number(args?.bins_below)) || 0,
                   bins_above: (result?.would_deploy?.bins_above ?? Number(args?.bins_above)) || 0,
-                  amount_sol: Number(args?.amount_y) || Number(args?.amount_sol) || config.management.deployAmountSol,
+                  amount_sol: deployAmount,
                   fee_rate_24h: args?.fee_tvl_ratio != null ? Number(args.fee_tvl_ratio) : null,
                   position_type: slotTypeMap.get(poolAddr) ?? "unknown",
                 });
@@ -961,6 +969,21 @@ Summarize the current portfolio health, total fees earned, and performance of al
       const closed = await updatePaperPositions(getDb(), getActiveBin);
       for (const pos of closed) {
         log("paper", `Paper OOR: ${pos.pool_name || pos.pool_address} | fee=${pos.simulated_fee_sol?.toFixed(6)} SOL`);
+
+        if (pos.exit_reason?.startsWith("oor_down")) {
+          const db = getDb();
+          const accumulated = Number(getMeta("compound_accumulated_sol", db) ?? 0) + (pos.simulated_fee_sol ?? 0);
+          setMeta("compound_accumulated_sol", accumulated, db);
+          const count = incrementCounter("closes_since_compound", db);
+          log("paper", `Compound: ${count}/5 oor_down closes | acc=${accumulated.toFixed(6)} SOL`);
+
+          if (count >= 5) {
+            setMeta("pending_compound_sol", accumulated, db);
+            setMeta("compound_accumulated_sol", 0, db);
+            resetCounter("closes_since_compound", db);
+            log("paper", `Compound triggered! ${accumulated.toFixed(6)} SOL queued for next deploy`);
+          }
+        }
       }
     } catch (e) {
       log("paper_error", `Paper trading update failed: ${e.message}`);
