@@ -67,9 +67,10 @@ export function runCertification(db, certConfig = {}) {
   const devnet   = getDevnetSummary(db);
   const combined = getCombinedAnalytics(db);
 
-  // 1. Paper win rate
+  // 1. Paper win rate — requires ≥5 closed positions with meaningful fee threshold
   const paperWinRate = paper.win_rate ?? 0;
-  const paperStatus  = paper.closed_count === 0 ? "PENDING"
+  const MIN_CLOSED_FOR_WIN_RATE = 5;
+  const paperStatus  = paper.closed_count < MIN_CLOSED_FOR_WIN_RATE ? "PENDING"
     : paperWinRate >= thresholds.paper_win_rate_min ? "PASS" : "FAIL";
 
   // 2. Sharpe (waived if < 20 trades)

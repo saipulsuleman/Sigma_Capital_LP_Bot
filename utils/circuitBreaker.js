@@ -49,7 +49,7 @@ export function initCircuit(db = getDb()) {
  * @param {{ pnl_usd?: number, config?: object }} opts
  * @returns {{ newly_triggered: boolean, reason: string|null }}
  */
-export function recordClose(db = getDb(), { pnl_usd = 0, config = {} } = {}) {
+export function recordClose(db = getDb(), { pnl_usd = 0, current_sol = null, config = {} } = {}) {
   initCircuit(db);
   const row = getRow(db);
   if (!row) return { newly_triggered: false, reason: null };
@@ -69,7 +69,7 @@ export function recordClose(db = getDb(), { pnl_usd = 0, config = {} } = {}) {
 
   if (wasTriggered) return { newly_triggered: false, reason: null };
 
-  const check = checkCircuit(db, config);
+  const check = checkCircuit(db, config, current_sol);
   if (check.triggered) {
     triggerCircuit(db, check.reason);
     return { newly_triggered: true, reason: check.reason };
@@ -81,9 +81,10 @@ export function recordClose(db = getDb(), { pnl_usd = 0, config = {} } = {}) {
  * Check current state against config thresholds.
  * Does NOT modify the DB — read-only check.
  * @param {object} config — { maxDailyLossUsd, maxConsecutiveLosses, maxDrawdownPct }
+ * @param {number|null} current_sol — current portfolio SOL value for drawdown check; null = skip drawdown
  * @returns {{ triggered: boolean, reason: string|null }}
  */
-export function checkCircuit(db = getDb(), config = {}) {
+export function checkCircuit(db = getDb(), config = {}, current_sol = null) {
   const row = getRow(db);
   if (!row) return { triggered: false, reason: null };
 
@@ -93,12 +94,20 @@ export function checkCircuit(db = getDb(), config = {}) {
 
   const maxDailyLoss = config.maxDailyLossUsd ?? 5;
   const maxConsec    = config.maxConsecutiveLosses ?? 3;
+  const maxDrawdown  = config.maxDrawdownPct ?? 20;
 
   if (row.daily_loss_usd >= maxDailyLoss) {
     return { triggered: true, reason: `daily_loss_usd ${row.daily_loss_usd.toFixed(2)} >= ${maxDailyLoss}` };
   }
   if (row.consecutive_losses >= maxConsec) {
     return { triggered: true, reason: `consecutive_losses ${row.consecutive_losses} >= ${maxConsec}` };
+  }
+  // Drawdown check — only when both peak and current SOL are known
+  if (row.peak_portfolio_sol != null && current_sol != null && row.peak_portfolio_sol > 0) {
+    const drawdownPct = (row.peak_portfolio_sol - current_sol) / row.peak_portfolio_sol * 100;
+    if (drawdownPct >= maxDrawdown) {
+      return { triggered: true, reason: `drawdown ${drawdownPct.toFixed(1)}% >= ${maxDrawdown}% (peak=${row.peak_portfolio_sol.toFixed(3)} SOL)` };
+    }
   }
 
   return { triggered: false, reason: null };

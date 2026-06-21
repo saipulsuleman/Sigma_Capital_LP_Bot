@@ -58,7 +58,8 @@ export function getPaperAnalytics(db) {
   `).all();
 
   const closedCount = closed.length;
-  const winCount  = closed.filter((r) => r.simulated_pnl_sol > 0).length;
+  // Win = earned at least 0.1% of deployed capital in fees (filters near-zero simulation artifacts)
+  const winCount  = closed.filter((r) => r.simulated_fee_sol > (r.amount_sol ?? 0) * 0.001).length;
   const lossCount = closedCount - winCount;
   const winRate   = closedCount > 0 ? winCount / closedCount : null;
 

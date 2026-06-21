@@ -43,7 +43,7 @@ import { checkAllocation } from "./utils/allocation.js";
 import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js";
 import { isConservativeMode, recordApiSuccess } from "./utils/conservative.js";
 import { openPaperPosition, updatePaperPositions, getPaperStats } from "./services/paperTrading.js";
-import { getCircuitStatus, resetCircuit, initCircuit } from "./utils/circuitBreaker.js";
+import { getCircuitStatus, resetCircuit, initCircuit, updatePeak } from "./utils/circuitBreaker.js";
 import { archiveOldPositions } from "./services/positionMemory.js";
 import { getDevnetSummary, isDevnetMode } from "./services/devnetRunner.js";
 import { getBacktestSummary } from "./services/historicalReplay.js";
@@ -922,13 +922,15 @@ Summarize the current portfolio health, total fees earned, and performance of al
         getWalletBalances(),
         getMyPositions({ force: false }).catch(() => ({ total_positions: 0 })),
       ]);
+      const sol = balance.sol ?? 0;
+      if (sol > 0) updatePeak(getDb(), sol);
       const usage = getDailyUsage();
       const inK = Math.round((usage.tokens_in) / 1000);
       const outK = Math.round((usage.tokens_out) / 1000);
       await sendMessage(
         `Heartbeat ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC\n` +
         `Positions: ${positions.total_positions ?? 0}\n` +
-        `SOL: ${(balance.sol ?? 0).toFixed(4)}\n` +
+        `SOL: ${sol.toFixed(4)}\n` +
         `Tokens today: ${inK}K in / ${outK}K out ($${usage.cost_usd.toFixed(4)})`
       );
     } catch (e) {
