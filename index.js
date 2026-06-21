@@ -42,8 +42,8 @@ import { runReviewAgent } from "./services/reviewAgent.js";
 import { checkAllocation } from "./utils/allocation.js";
 import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js";
 import { isConservativeMode, recordApiSuccess } from "./utils/conservative.js";
-import { openPaperPosition, updatePaperPositions, getPaperStats } from "./services/paperTrading.js";
-import { getCircuitStatus, resetCircuit, initCircuit, updatePeak } from "./utils/circuitBreaker.js";
+import { openPaperPosition, updatePaperPositions, getPaperStats, closePaperPosition } from "./services/paperTrading.js";
+import { getCircuitStatus, resetCircuit, initCircuit, updatePeak, setLiquidationHook } from "./utils/circuitBreaker.js";
 import { archiveOldPositions } from "./services/positionMemory.js";
 import { getDevnetSummary, isDevnetMode } from "./services/devnetRunner.js";
 import { getBacktestSummary } from "./services/historicalReplay.js";
@@ -64,6 +64,19 @@ if (isMain) {
   log("startup", `Mode: ${process.env.DRY_RUN === "true" ? "DRY RUN" : "LIVE"}`);
   log("startup", `Model: ${process.env.LLM_MODEL || "hermes-3-405b"}`);
   try { initCircuit(getDb()); } catch (e) { log("startup_warn", `initCircuit failed: ${e.message}`); }
+  setLiquidationHook(async () => {
+    const db = getDb();
+    const openPaper = db.prepare("SELECT id, pool_name FROM paper_positions WHERE status='open'").all();
+    for (const pos of openPaper) {
+      try { closePaperPosition(db, pos.id, "circuit_liquidation"); } catch {}
+    }
+    if (openPaper.length > 0) {
+      log("circuit", `Auto-liquidated ${openPaper.length} paper position(s) on circuit trigger`);
+      if (telegramEnabled()) {
+        sendMessage(`Circuit breaker triggered — auto-liquidated ${openPaper.length} paper position(s)`).catch(() => {});
+      }
+    }
+  });
 }
 
 const TP_PCT = config.management.takeProfitPct;
@@ -229,7 +242,10 @@ export async function runManagementCycle({ silent = false } = {}) {
     if (!silent && telegramEnabled()) {
       liveMessage = await createLiveMessage("🔄 Management Cycle", "Evaluating positions...");
     }
-    const livePositions = await getMyPositions({ force: true }).catch(() => null);
+    const livePositions = await Promise.race([
+      getMyPositions({ force: true }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("getMyPositions timeout after 30s")), 30_000)),
+    ]).catch((e) => { log("cron_warn", `getMyPositions failed: ${e.message}`); return null; });
     positions = livePositions?.positions || [];
 
     if (positions.length === 0) {

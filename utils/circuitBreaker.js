@@ -1,4 +1,4 @@
-import { getDb } from "../db/db.js";
+import { getDb, getMeta, setMeta } from "../db/db.js";
 import { log } from "../logger.js";
 
 function todayUtc() {
@@ -61,6 +61,19 @@ export function recordClose(db = getDb(), { pnl_usd = 0, current_sol = null, con
   if (pnl_usd < 0) {
     daily_loss_usd += Math.abs(pnl_usd);
     consecutive_losses += 1;
+
+    // Rolling 7-day loss tracker — prevents $4.99/day bleed going undetected across UTC midnight resets
+    const loss = Math.abs(pnl_usd);
+    const nowEpoch = Math.floor(Date.now() / 1000);
+    const SEVEN_DAYS = 7 * 24 * 3600;
+    const startEpochStr = getMeta("rolling_7d_start_epoch", db);
+    if (!startEpochStr || (nowEpoch - Number(startEpochStr)) > SEVEN_DAYS) {
+      setMeta("rolling_7d_start_epoch", String(nowEpoch), db);
+      setMeta("rolling_7d_loss_usd", loss.toFixed(4), db);
+    } else {
+      const prev = Number(getMeta("rolling_7d_loss_usd", db) ?? 0);
+      setMeta("rolling_7d_loss_usd", (prev + loss).toFixed(4), db);
+    }
   } else {
     consecutive_losses = 0;
   }
@@ -102,6 +115,12 @@ export function checkCircuit(db = getDb(), config = {}, current_sol = null) {
   if (row.consecutive_losses >= maxConsec) {
     return { triggered: true, reason: `consecutive_losses ${row.consecutive_losses} >= ${maxConsec}` };
   }
+  // Rolling 7-day loss check — catches $4.99/day bleed that resets daily bucket each UTC midnight
+  const maxWeeklyLoss = config.maxWeeklyLossUsd ?? 35;
+  const rollingLoss = Number(getMeta("rolling_7d_loss_usd", db) ?? 0);
+  if (rollingLoss >= maxWeeklyLoss) {
+    return { triggered: true, reason: `rolling_7d_loss_usd ${rollingLoss.toFixed(2)} >= ${maxWeeklyLoss}` };
+  }
   // Drawdown check — only when both peak and current SOL are known
   if (row.peak_portfolio_sol != null && current_sol != null && row.peak_portfolio_sol > 0) {
     const drawdownPct = (row.peak_portfolio_sol - current_sol) / row.peak_portfolio_sol * 100;
@@ -112,6 +131,10 @@ export function checkCircuit(db = getDb(), config = {}, current_sol = null) {
 
   return { triggered: false, reason: null };
 }
+
+// Hook called asynchronously when circuit fires — registered from index.js to avoid circular dep
+let _liquidationHook = null;
+export function setLiquidationHook(fn) { _liquidationHook = fn; }
 
 /**
  * Set triggered flag with a reason (called internally by recordClose or manually).
@@ -124,6 +147,11 @@ export function triggerCircuit(db = getDb(), reason = "manual") {
     date_utc: todayUtc(),
   });
   log("circuit", `Circuit breaker TRIGGERED: ${reason}`);
+  if (_liquidationHook) {
+    Promise.resolve().then(() => _liquidationHook()).catch((e) =>
+      log("circuit_warn", `Auto-liquidation hook failed: ${e.message}`)
+    );
+  }
 }
 
 /**

@@ -47,30 +47,37 @@ export function openPaperPosition(db = getDb(), {
  * @returns {object|null} closed position data, or null if not found
  */
 export function closePaperPosition(db = getDb(), id, exit_reason = "oor") {
-  const pos = db.prepare("SELECT * FROM paper_positions WHERE id = ? AND status = 'open'").get(id);
-  if (!pos) return null;
+  db.exec("BEGIN");
+  try {
+    const pos = db.prepare("SELECT * FROM paper_positions WHERE id = ? AND status = 'open'").get(id);
+    if (!pos) { db.exec("COMMIT"); return null; }
 
-  const now = new Date().toISOString();
-  const entryMs = new Date(pos.entry_time).getTime();
-  const exitMs = Date.now();
-  const hoursInRange = Math.max(0, (exitMs - entryMs) / 3_600_000);
-  // Use real pool fee rate if stored, else fallback to constant.
-  // entry_fee_rate_24h is a percentage (e.g. 9.69 means 9.69% of position per 24h).
-  const hourlyRate = pos.entry_fee_rate_24h != null
-    ? (pos.entry_fee_rate_24h / 100) / 24
-    : PAPER_HOURLY_FEE_RATE;
-  const simulated_fee_sol = pos.amount_sol * hourlyRate * hoursInRange;
-  // Single-side SOL deploy: no impermanent loss when in range, PnL = earned fees
-  const simulated_pnl_sol = simulated_fee_sol;
+    const now = new Date().toISOString();
+    const entryMs = new Date(pos.entry_time).getTime();
+    const exitMs = Date.now();
+    const hoursInRange = Math.max(0, (exitMs - entryMs) / 3_600_000);
+    // Use real pool fee rate if stored, else fallback to constant.
+    // entry_fee_rate_24h is a percentage (e.g. 9.69 means 9.69% of position per 24h).
+    const hourlyRate = pos.entry_fee_rate_24h != null
+      ? (pos.entry_fee_rate_24h / 100) / 24
+      : PAPER_HOURLY_FEE_RATE;
+    const simulated_fee_sol = pos.amount_sol * hourlyRate * hoursInRange;
+    // Single-side SOL deploy: no impermanent loss when in range, PnL = earned fees
+    const simulated_pnl_sol = simulated_fee_sol;
 
-  db.prepare(`
-    UPDATE paper_positions
-    SET status='closed', exit_time=?, exit_reason=?, simulated_fee_sol=?, simulated_pnl_sol=?
-    WHERE id = ?
-  `).run(now, exit_reason, simulated_fee_sol, simulated_pnl_sol, id);
+    db.prepare(`
+      UPDATE paper_positions
+      SET status='closed', exit_time=?, exit_reason=?, simulated_fee_sol=?, simulated_pnl_sol=?
+      WHERE id = ?
+    `).run(now, exit_reason, simulated_fee_sol, simulated_pnl_sol, id);
 
-  log("paper", `Closed paper position ${id}: ${exit_reason} | holding=${hoursInRange.toFixed(2)}h | fee=${simulated_fee_sol.toFixed(6)} SOL`);
-  return { id, pool_address: pos.pool_address, pool_name: pos.pool_name, simulated_fee_sol, simulated_pnl_sol, exit_reason, hours_in_range: hoursInRange };
+    db.exec("COMMIT");
+    log("paper", `Closed paper position ${id}: ${exit_reason} | holding=${hoursInRange.toFixed(2)}h | fee=${simulated_fee_sol.toFixed(6)} SOL`);
+    return { id, pool_address: pos.pool_address, pool_name: pos.pool_name, simulated_fee_sol, simulated_pnl_sol, exit_reason, hours_in_range: hoursInRange };
+  } catch (e) {
+    try { db.exec("ROLLBACK"); } catch {}
+    throw e;
+  }
 }
 
 /**

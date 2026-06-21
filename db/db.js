@@ -72,9 +72,11 @@ export function setCounter(key, value, db = getDb()) {
 }
 
 export function incrementCounter(key, db = getDb()) {
-  const next = getCounter(key, db) + 1;
-  setCounter(key, next, db);
-  return next;
+  db.prepare(
+    "INSERT INTO counters(key, value) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET value = value + 1"
+  ).run(key);
+  const row = db.prepare("SELECT value FROM counters WHERE key = ?").get(key);
+  return row ? Number(row.value) : 1;
 }
 
 export function resetCounter(key, db = getDb()) {
