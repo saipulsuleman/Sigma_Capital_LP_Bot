@@ -95,10 +95,16 @@ export async function updatePaperPositions(db = getDb(), getActiveBinFn) {
 
       const minBin = pos.entry_bin - pos.bins_below;
       const maxBin = pos.entry_bin + pos.bins_above;
-      const isOor = currentBin < minBin || currentBin > maxBin;
+      // Single-sided positions (bins_above=0) are idle when price is above entry — SOL
+      // intact, just waiting. Only exit on downward OOR (price crashed below range).
+      // Two-sided positions exit in either direction as normal.
+      const isOorDown = currentBin < minBin;
+      const isOorUp = currentBin > maxBin;
+      const isOor = pos.bins_above === 0 ? isOorDown : (isOorDown || isOorUp);
 
       if (isOor) {
-        const result = closePaperPosition(db, pos.id, `oor:bin=${currentBin}`);
+        const exitReason = isOorDown ? `oor_down:bin=${currentBin}` : `oor_up:bin=${currentBin}`;
+        const result = closePaperPosition(db, pos.id, exitReason);
         if (result) closed.push(result);
       }
     } catch (e) {
