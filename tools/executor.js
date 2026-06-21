@@ -98,7 +98,12 @@ async function validateDeployPoolThresholds(args) {
 
   const tvl = poolDetailTvl(detail);
   const minTvl = numberOrNull(config.screening.minTvl);
-  const maxTvl = numberOrNull(config.screening.maxTvl);
+  const maxTvlValues = [
+    config.screening.maxTvl,
+    config.hybridScreening?.stable?.maxTvl,
+    config.hybridScreening?.meme?.maxTvl,
+  ].filter(v => v != null).map(Number);
+  const maxTvl = maxTvlValues.length > 0 ? Math.max(...maxTvlValues) : null;
   if (tvl == null) {
     return {
       pass: false,
