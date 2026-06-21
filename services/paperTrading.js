@@ -47,10 +47,10 @@ export function openPaperPosition(db = getDb(), {
  * @returns {object|null} closed position data, or null if not found
  */
 export function closePaperPosition(db = getDb(), id, exit_reason = "oor") {
-  db.exec("BEGIN");
   try {
+    db.exec("BEGIN");
     const pos = db.prepare("SELECT * FROM paper_positions WHERE id = ? AND status = 'open'").get(id);
-    if (!pos) { db.exec("COMMIT"); return null; }
+    if (!pos) { db.exec("ROLLBACK"); return null; }
 
     const now = new Date().toISOString();
     const entryMs = new Date(pos.entry_time).getTime();

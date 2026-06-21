@@ -613,7 +613,9 @@ export async function executeTool(name, args) {
   // ─── Circuit breaker gate (T20) ──────────
   if (name === "deploy_position") {
     try {
-      const circuit = checkCircuit(getDb(), config.circuitBreaker);
+      const _cbBalances = await getWalletBalances({}).catch(() => null);
+      const _cbSol = _cbBalances?.sol ?? null;
+      const circuit = checkCircuit(getDb(), config.circuitBreaker, _cbSol);
       if (circuit.triggered) {
         log("circuit", `deploy_position blocked by circuit breaker: ${circuit.reason}`);
         return { blocked: true, circuit_breaker: true, reason: `Circuit breaker active: ${circuit.reason}` };
@@ -646,7 +648,9 @@ export async function executeTool(name, args) {
         notifyClose({ pair: result.pool_name || args.position_address?.slice(0, 8), pnlUsd: result.pnl_usd ?? 0, pnlPct: result.pnl_pct ?? 0 }).catch(() => {});
         // Record close in circuit breaker (T20)
         try {
-          const { newly_triggered, reason } = recordCircuitClose(getDb(), { pnl_usd: result.pnl_usd ?? 0, config: config.circuitBreaker });
+          const _rcBalances = await getWalletBalances({}).catch(() => null);
+          const _rcSol = _rcBalances?.sol ?? null;
+          const { newly_triggered, reason } = recordCircuitClose(getDb(), { pnl_usd: result.pnl_usd ?? 0, current_sol: _rcSol, config: config.circuitBreaker });
           if (newly_triggered) {
             log("circuit", `Circuit breaker triggered after close: ${reason}`);
           }

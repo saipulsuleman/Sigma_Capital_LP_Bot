@@ -67,13 +67,15 @@ if (isMain) {
   setLiquidationHook(async () => {
     const db = getDb();
     const openPaper = db.prepare("SELECT id, pool_name FROM paper_positions WHERE status='open'").all();
+    let _liquidated = 0;
     for (const pos of openPaper) {
-      try { closePaperPosition(db, pos.id, "circuit_liquidation"); } catch {}
+      try { closePaperPosition(db, pos.id, "circuit_liquidation"); _liquidated++; }
+      catch (e) { log("circuit_warn", `Failed to liquidate paper pos ${pos.id}: ${e.message}`); }
     }
     if (openPaper.length > 0) {
-      log("circuit", `Auto-liquidated ${openPaper.length} paper position(s) on circuit trigger`);
+      log("circuit", `Auto-liquidated ${_liquidated}/${openPaper.length} paper position(s) on circuit trigger`);
       if (telegramEnabled()) {
-        sendMessage(`Circuit breaker triggered — auto-liquidated ${openPaper.length} paper position(s)`).catch(() => {});
+        sendMessage(`Circuit breaker triggered — auto-liquidated ${_liquidated}/${openPaper.length} paper position(s)`).catch(() => {});
       }
     }
   });
@@ -242,10 +244,8 @@ export async function runManagementCycle({ silent = false } = {}) {
     if (!silent && telegramEnabled()) {
       liveMessage = await createLiveMessage("🔄 Management Cycle", "Evaluating positions...");
     }
-    const livePositions = await Promise.race([
-      getMyPositions({ force: true }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("getMyPositions timeout after 30s")), 30_000)),
-    ]).catch((e) => { log("cron_warn", `getMyPositions failed: ${e.message}`); return null; });
+    const livePositions = await withTimeout(getMyPositions({ force: true }), 30_000)
+      .catch((e) => { log("cron_warn", `getMyPositions failed: ${e.message}`); return null; });
     positions = livePositions?.positions || [];
 
     if (positions.length === 0) {
