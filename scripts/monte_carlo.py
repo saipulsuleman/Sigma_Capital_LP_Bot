@@ -47,12 +47,14 @@ BINS_BELOW    = int(user_config.get("defaultBinsBelow", 69))
 BIN_STEP_MIN  = float(user_config.get("minBinStep", 80))
 BIN_STEP_MAX  = float(user_config.get("maxBinStep", 125))
 
-SOL_PRICE_USD = 145.0
-IDR_PER_USD   = 16_200
-GAS_SOL       = 0.003    # approx deploy+close gas (live mode only)
-DAYS          = 30
-N_RUNS        = 10_000
-SEED          = 42
+SOL_PRICE_USD   = 145.0
+IDR_PER_USD     = 16_200
+GAS_SOL         = 0.003    # approx deploy+close gas (live mode only)
+MIN_SOL_TO_OPEN = float(user_config.get("minSolToOpen", 1.1))
+GAS_RESERVE     = float(user_config.get("gasReserve", 0.1))
+DAYS            = 30
+N_RUNS          = 10_000
+SEED            = 42
 
 # ---------------------------------------------------------------------------
 # Scenarios
@@ -135,8 +137,10 @@ def sample_pool(sc, rng):
 # Single run
 # ---------------------------------------------------------------------------
 
+STARTING_SOL = 2.0
+
 def simulate_run(sc, rng):
-    capital_sol     = 5.0
+    capital_sol     = STARTING_SOL
     peak_sol        = capital_sol
     circuit_day     = None
 
@@ -153,6 +157,9 @@ def simulate_run(sc, rng):
         n_opens = int(rng.poisson(sc["positions_lambda"]))
         for _ in range(n_opens):
             if circuit_day is not None:
+                break
+            # Enforce capital gate: need enough SOL to deploy + gas reserve
+            if capital_sol - DEPLOY_SOL < GAS_RESERVE + (MIN_SOL_TO_OPEN - DEPLOY_SOL):
                 break
 
             fee_rate_24h, sigma_daily = sample_pool(sc, rng)
@@ -197,7 +204,7 @@ def simulate_run(sc, rng):
     wins = sum(1 for p in pnls_usd if p > 0)
 
     return {
-        "pnl_usd":           (capital_sol - 5.0) * SOL_PRICE_USD,
+        "pnl_usd":           (capital_sol - STARTING_SOL) * SOL_PRICE_USD,
         "n_positions":       n,
         "win_rate":          wins / n if n > 0 else 0.0,
         "circuit_triggered": circuit_day is not None,
@@ -255,7 +262,7 @@ def print_report(all_stats):
     print()
     print(SEP)
     print("  SIGMA CAPITAL LP BOT - MONTE CARLO SIMULATION")
-    print(f"  Runs: {N_RUNS:,} | Horizon: {DAYS} hari | Capital: 5.0 SOL")
+    print(f"  Runs: {N_RUNS:,} | Horizon: {DAYS} hari | Capital: {STARTING_SOL} SOL")
     print(f"  Circuit: daily>=${MAX_DAILY_LOSS_USD}, consec>={MAX_CONSEC_LOSSES},"
           f" weekly>=${MAX_WEEKLY_LOSS_USD}, dd>={MAX_DRAWDOWN_PCT}%")
     print(SEP)
