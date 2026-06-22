@@ -24,7 +24,7 @@ export function openPaperPosition(db = getDb(), {
   amount_sol,
   strategy = null,
   reasoning_summary = null,
-  fee_rate_24h = null,  // fee_tvl_ratio (%) from pool at deploy time — used for realistic fee simulation
+  fee_rate_24h = null,  // fee_tvl_ratio converted to %/24h (caller must normalize from per-timeframe)
   position_type = "unknown",  // "stable" | "meme" | "unknown" from dual screening slot
 } = {}) {
   if (!pool_address) throw new Error("pool_address is required");

@@ -801,7 +801,17 @@ IMPORTANT:
                   bins_below: (result?.would_deploy?.bins_below ?? Number(args?.bins_below)) || 0,
                   bins_above: (result?.would_deploy?.bins_above ?? Number(args?.bins_above)) || 0,
                   amount_sol: deployAmount,
-                  fee_rate_24h: args?.fee_tvl_ratio != null ? Number(args.fee_tvl_ratio) : null,
+                  fee_rate_24h: (() => {
+                    // fee_active_tvl_ratio from Meteora API is per-timeframe (e.g. per 5m), not per 24h.
+                    // Convert to %/24h so closePaperPosition's formula (feeRate/100/24) is accurate.
+                    if (args?.fee_tvl_ratio == null) return null;
+                    const st = slotTypeMap.get(poolAddr) ?? "unknown";
+                    const tfStr = st === "stable"
+                      ? (config.hybridScreening?.stable?.timeframe ?? config.screening.timeframe)
+                      : (config.hybridScreening?.meme?.timeframe   ?? config.screening.timeframe);
+                    const tfMin = parseInt(tfStr) || 5;
+                    return Number(args.fee_tvl_ratio) * (1440 / tfMin);
+                  })(),
                   position_type: slotTypeMap.get(poolAddr) ?? "unknown",
                 });
               }
