@@ -58,8 +58,10 @@ export function getPaperAnalytics(db) {
   `).all();
 
   const closedCount = closed.length;
-  // Win = earned at least 0.1% of deployed capital in fees (filters near-zero simulation artifacts)
-  const winCount  = closed.filter((r) => r.simulated_fee_sol > (r.amount_sol ?? 0) * 0.001).length;
+  // Win = net profitable after gas cost (must earn more than 0.006 SOL gas round-trip)
+  // Matches GAS_ROUND_TRIP_SOL in paperTrading.js so analytics and T25 gate agree
+  const GAS_ROUND_TRIP_SOL = 0.006;
+  const winCount  = closed.filter((r) => (r.simulated_pnl_sol ?? 0) > GAS_ROUND_TRIP_SOL).length;
   const lossCount = closedCount - winCount;
   const winRate   = closedCount > 0 ? winCount / closedCount : null;
 

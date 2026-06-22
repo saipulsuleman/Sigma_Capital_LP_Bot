@@ -114,6 +114,13 @@ export async function recordPerformance(perf) {
     return;
   }
 
+  // Explicit null guard: suspiciousUnitMix uses AND of isFinite() which is false for null,
+  // so null values pass through. null arithmetic coerces to 0 giving silently wrong pnl_usd.
+  if (perf.final_value_usd == null || perf.initial_value_usd == null) {
+    log("lessons_warn", `recordPerformance: null final/initial_value_usd for pool ${perf.pool_name || perf.pool} — skipping`);
+    return;
+  }
+
   const pnl_usd = (perf.final_value_usd + (perf.fees_earned_usd ?? 0)) - perf.initial_value_usd;
   const pnl_pct = perf.initial_value_usd > 0
     ? (pnl_usd / perf.initial_value_usd) * 100

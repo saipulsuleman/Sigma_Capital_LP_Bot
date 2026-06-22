@@ -57,7 +57,8 @@ export function closePaperPosition(db = getDb(), id, exit_reason = "oor") {
     if (!pos) { db.exec("ROLLBACK"); return null; }
 
     const now = new Date().toISOString();
-    const entryMs = new Date(pos.entry_time).getTime();
+    // Guard: entry_time null → new Date(null) = epoch 0 → ~495k hours. Use Date.now() as safe fallback (0h held).
+    const entryMs = pos.entry_time ? new Date(pos.entry_time).getTime() : Date.now();
     const exitMs = Date.now();
     const hoursInRange = Math.max(0, (exitMs - entryMs) / 3_600_000);
     // Use real pool fee rate if stored, else fallback to constant.

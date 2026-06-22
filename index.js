@@ -1002,6 +1002,18 @@ Summarize the current portfolio health, total fees earned, and performance of al
             resetCounter("closes_since_compound", db);
             log("paper", `Compound triggered! ${accumulated.toFixed(6)} SOL queued for next deploy`);
           }
+
+          // REVIEW counter: only organic oor_down exits count — not circuit_liquidation, max_hold_exceeded, etc.
+          try {
+            const reviewCount = incrementCounter("closes_since_review", db);
+            log("paper", `REVIEW counter: ${reviewCount}/5`);
+            if (reviewCount >= 5) {
+              resetCounter("closes_since_review", db);
+              runReviewAgent().catch((e) => log("review_error", `REVIEW failed: ${e.message}`));
+            }
+          } catch (e) {
+            log("paper_warn", `REVIEW counter update failed: ${e.message}`);
+          }
         }
 
         // Fix 3 + 4: feed paper close into lessons/Darwin/evolveThresholds
@@ -1024,19 +1036,6 @@ Summarize the current portfolio health, total fees earned, and performance of al
           });
         } catch (e) {
           log("paper_warn", `recordPerformance failed for ${pos.id}: ${e.message}`);
-        }
-
-        // Fix 1: increment REVIEW counter; fire runReviewAgent every 5 paper closes
-        try {
-          const db = getDb();
-          const reviewCount = incrementCounter("closes_since_review", db);
-          log("paper", `REVIEW counter: ${reviewCount}/5`);
-          if (reviewCount >= 5) {
-            resetCounter("closes_since_review", db);
-            runReviewAgent().catch((e) => log("review_error", `REVIEW failed: ${e.message}`));
-          }
-        } catch (e) {
-          log("paper_warn", `REVIEW counter update failed: ${e.message}`);
         }
       }
     } catch (e) {
