@@ -494,6 +494,16 @@ export async function runScreeningCycle({ silent = false } = {}) {
       _screeningBusy = false;
       return screenReport;
     }
+
+    // Circuit breaker: skip LLM call entirely when triggered — executor would also block deploy,
+    // but skipping here avoids wasting DeepSeek tokens on a cycle that can't deploy anything.
+    const cbStatus = getCircuitStatus(getDb());
+    if (cbStatus.triggered) {
+      log("cron", `Circuit breaker active (${cbStatus.trigger_reason}) — SCREENER blocked`);
+      screenReport = `Screening blocked: circuit breaker triggered (${cbStatus.trigger_reason})`;
+      _screeningBusy = false;
+      return screenReport;
+    }
   } catch (e) {
     log("cron_error", `Screening pre-check failed: ${e.message}`);
     screenReport = `Screening pre-check failed: ${e.message}`;

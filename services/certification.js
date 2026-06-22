@@ -80,7 +80,8 @@ export function runCertification(db, certConfig = {}) {
     : sharpeVal != null && sharpeVal >= thresholds.sharpe_min ? "PASS" : "FAIL";
 
   // 3. Devnet successful cycles
-  const devnetStatus = devnet.successful_cycles >= thresholds.devnet_tx_min ? "PASS" : "FAIL";
+  const devnetStatus = devnet.successful_cycles === 0 ? "PENDING"
+    : devnet.successful_cycles >= thresholds.devnet_tx_min ? "PASS" : "FAIL";
 
   // 4. Jest test count — read from meta (set by CI or test runner)
   const jestCountRaw = getMeta("jest_test_count", db);
@@ -98,7 +99,7 @@ export function runCertification(db, certConfig = {}) {
 
   const criteria = [
     criterion("paper_win_rate", `${(paperWinRate * 100).toFixed(1)}%`, `>=${(thresholds.paper_win_rate_min * 100).toFixed(0)}%`, paperStatus),
-    criterion("sharpe",         sharpeVal != null ? sharpeVal.toFixed(2) : hasEnough ? "n/a" : `waived (<20 trades, have ${paper.closed_count})`, `>=${thresholds.sharpe_min}`, !hasEnough ? "PASS" : sharpeStatus),
+    criterion("sharpe",         sharpeVal != null ? sharpeVal.toFixed(2) : !hasEnough ? `waived (<20 trades, have ${paper.closed_count})` : "n/a (incalculable — all returns identical)", `>=${thresholds.sharpe_min}`, !hasEnough ? "PASS" : sharpeStatus),
     criterion("devnet_cycles",  devnet.successful_cycles, `>=${thresholds.devnet_tx_min}`, devnetStatus),
     criterion("jest_tests",     jestCount ?? "unknown", `>=${thresholds.jest_tests_min}`, jestStatus),
     criterion("conservative_mode_tested", conservativeTested ? "yes" : "no", "yes", conservativeStatus),
