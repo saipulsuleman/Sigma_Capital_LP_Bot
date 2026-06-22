@@ -55,7 +55,7 @@ export function getDb() {
 
 export function closeDb() {
   if (!_db) return;
-  try { _db.close(); } catch {}
+  try { _db.close(); } catch (e) { console.error(`[db_warn] DB close failed: ${e.message}`); }
   _db = null;
 }
 

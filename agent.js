@@ -170,7 +170,7 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
       const { getWeightsSummary } = await import("./signal-weights.js");
       const { config } = await import("./config.js");
       if (config.darwin?.enabled) weightsSummary = getWeightsSummary();
-    } catch { /* signal-weights not critical */ }
+    } catch (e) { log("agent_warn", `signal-weights load failed — Darwin scoring disabled this cycle: ${e.message}`); }
   }
   const systemPrompt = buildSystemPrompt(agentType, portfolio, positions, stateSummary, lessons, perfSummary, weightsSummary, decisionSummary);
 
@@ -257,8 +257,8 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
         log("error", `Bad API response: ${JSON.stringify(response).slice(0, 200)}`);
         throw new Error(`API returned no choices: ${response.error?.message || JSON.stringify(response)}`);
       }
-      try { recordUsage(usedModel, response.usage?.prompt_tokens ?? 0, response.usage?.completion_tokens ?? 0); } catch {}
-      try { recordApiSuccess(); } catch {}
+      try { recordUsage(usedModel, response.usage?.prompt_tokens ?? 0, response.usage?.completion_tokens ?? 0); } catch (e) { log("agent_warn", `recordUsage failed: ${e.message}`); }
+      try { recordApiSuccess(); } catch (e) { log("agent_warn", `recordApiSuccess failed: ${e.message}`); }
       const msg = response.choices[0].message;
       const invalidToolArgErrors = new Map();
       // Keep tool-call history API-valid, but never execute unrecoverable args.

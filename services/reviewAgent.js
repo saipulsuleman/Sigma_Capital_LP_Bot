@@ -49,7 +49,7 @@ export async function runReviewAgent() {
         try {
           const txt = fs.readFileSync(path.join(SKILLS_ACTIVE, f), "utf8");
           activeSkillSnippets.push(`--- ${f} ---\n${txt.slice(0, 400)}`);
-        } catch {}
+        } catch (e) { log("review_warn", `Could not read skill file ${f}: ${e.message}`); }
       }
     }
 
@@ -122,7 +122,7 @@ export async function runReviewAgent() {
       await sendMessage(
         `REVIEW: new skill generated.\nFile: ${filename}\nPreview: ${preview}\n\nApprove: /approve_skill ${filename}`
       );
-    } catch {}
+    } catch (e) { log("review_warn", `Telegram skill notify failed — skill ${filename} awaits manual approval: ${e.message}`); }
   } catch (e) {
     log("review_error", `REVIEW Agent failed: ${e.message}`);
     try {

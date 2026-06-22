@@ -621,7 +621,8 @@ export async function executeTool(name, args) {
         return { blocked: true, circuit_breaker: true, reason: `Circuit breaker active: ${circuit.reason}` };
       }
     } catch (e) {
-      log("circuit_warn", `Circuit breaker check failed: ${e.message}`);
+      log("circuit_warn", `Circuit breaker check failed — deploy blocked for safety: ${e.message}`);
+      return { blocked: true, circuit_breaker: true, reason: `Circuit breaker check error: ${e.message}` };
     }
   }
 
@@ -669,7 +670,7 @@ export async function executeTool(name, args) {
             resetCounter("closes_since_review");
             if (_closeHook) _closeHook().catch(() => {});
           }
-        } catch {}
+        } catch (e) { log("executor_warn", `REVIEW counter update failed: ${e.message}`); }
         // Auto-swap base token back to SOL unless user said to hold
         if (!args.skip_swap && result.base_mint) {
           try {

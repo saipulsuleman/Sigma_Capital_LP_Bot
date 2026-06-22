@@ -49,7 +49,9 @@ function load() {
   }
   try {
     return JSON.parse(fs.readFileSync(LESSONS_FILE, "utf8"));
-  } catch {
+  } catch (e) {
+    const size = (() => { try { return fs.statSync(LESSONS_FILE).size; } catch { return "?"; } })();
+    log("lessons_warn", `lessons.json parse failed (size=${size}B) — returning empty, history may be lost: ${e.message}`);
     return { lessons: [], performance: [] };
   }
 }

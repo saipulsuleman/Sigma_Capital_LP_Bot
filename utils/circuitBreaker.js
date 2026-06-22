@@ -149,7 +149,7 @@ export function triggerCircuit(db = getDb(), reason = "manual") {
   log("circuit", `Circuit breaker TRIGGERED: ${reason}`);
   if (_liquidationHook) {
     Promise.resolve().then(() => _liquidationHook()).catch((e) =>
-      log("circuit_warn", `Auto-liquidation hook failed: ${e.message}`)
+      log("circuit_warn", `Auto-liquidation hook failed: ${e.stack || e.message}`)
     );
   }
 }
