@@ -7,6 +7,10 @@ import { log } from "../logger.js";
  */
 export const PAPER_HOURLY_FEE_RATE = 0.0002;
 
+// Live gas cost per position (deploy + close). Win in paper trading = earned more than this.
+// Matches GAS_SOL constant in scripts/monte_carlo.py for 1:1 simulation accuracy.
+export const GAS_ROUND_TRIP_SOL = 0.006;
+
 /**
  * Record a new simulated paper position when SCREENER calls deploy_position in DRY_RUN mode.
  * @returns {string} id of the created record
@@ -115,10 +119,14 @@ export async function updatePaperPositions(db = getDb(), getActiveBinFn) {
         if (result) closed.push(result);
       }
     } catch (e) {
-      const hoursOpen = pos.entry_time
-        ? ((Date.now() - new Date(pos.entry_time).getTime()) / 3_600_000).toFixed(1)
-        : "?";
+      const hoursOpenMs = pos.entry_time ? Date.now() - new Date(pos.entry_time).getTime() : 0;
+      const hoursOpen = (hoursOpenMs / 3_600_000).toFixed(1);
       log("paper_warn", `OOR check failed for paper position ${pos.id} (open ${hoursOpen}h): ${e.message}`);
+      // Force-close after 168h (7 days) — matches monte carlo max hold cap — prevents stuck positions
+      if (hoursOpenMs >= 168 * 3_600_000) {
+        const result = closePaperPosition(db, pos.id, "max_hold_exceeded");
+        if (result) closed.push(result);
+      }
     }
   }
   return closed;
@@ -130,7 +138,7 @@ export async function updatePaperPositions(db = getDb(), getActiveBinFn) {
 export function getPaperStats(db = getDb()) {
   const openRow = db.prepare("SELECT COUNT(*) as count FROM paper_positions WHERE status='open'").get();
   const closedRow = db.prepare("SELECT COUNT(*) as count FROM paper_positions WHERE status='closed'").get();
-  const winsRow = db.prepare("SELECT COUNT(*) as count FROM paper_positions WHERE status='closed' AND simulated_pnl_sol > 0.000001").get();
+  const winsRow = db.prepare("SELECT COUNT(*) as count FROM paper_positions WHERE status='closed' AND simulated_pnl_sol > ?").get(GAS_ROUND_TRIP_SOL);
   const pnlRow = db.prepare(`
     SELECT AVG(simulated_pnl_sol) as avg_pnl, SUM(simulated_fee_sol) as total_fee
     FROM paper_positions WHERE status='closed'
