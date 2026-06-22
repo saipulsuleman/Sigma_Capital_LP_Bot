@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS paper_positions (
   simulated_pnl_sol  REAL NOT NULL DEFAULT 0.0,
   entry_fee_rate_24h REAL,   -- fee_tvl_ratio (%) from Meteora at deploy time; NULL = use constant fallback
   reasoning_summary  TEXT,
+  position_type      TEXT NOT NULL DEFAULT 'unknown',
   status             TEXT NOT NULL DEFAULT 'open'
 );
 

@@ -259,16 +259,16 @@ describe("getPaperStats (T18)", () => {
     const id2 = openPaperPosition(db, { pool_address: "p2", amount_sol: 0.15, entry_bin: 500, bins_below: 20, bins_above: 0 });
     const id3 = openPaperPosition(db, { pool_address: "p3", amount_sol: 0.15, entry_bin: 500, bins_below: 20, bins_above: 0 });
 
-    // Backdate id1 and id2 by 1 hour (so fee > 0 = win), close id3 immediately (fee ≈ 0 = loss)
-    db.prepare("UPDATE paper_positions SET entry_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 hour') WHERE id IN (?, ?)").run(id1, id2);
+    // Set high fee rate (50%/24h) and backdate by 2h so fee=0.15×0.02083×2=0.00625 SOL > GAS(0.006) = WIN
+    db.prepare("UPDATE paper_positions SET entry_fee_rate_24h=50.0, entry_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 hours') WHERE id IN (?, ?)").run(id1, id2);
 
     closePaperPosition(db, id1, "oor");
     closePaperPosition(db, id2, "oor");
-    closePaperPosition(db, id3, "oor"); // immediate close → fee ≈ 0
+    closePaperPosition(db, id3, "oor"); // immediate close → fee ≈ 0 < GAS → loss
 
     const stats = getPaperStats(db);
     assert.equal(stats.closed_count, 3);
-    // id1 and id2 have positive fee (1 hour in range) → wins; id3 has ~0 fee → loss
+    // id1 and id2: pnl=0.00625 SOL > GAS(0.006) → wins; id3: pnl≈0 < GAS → loss
     assert.equal(stats.win_count, 2);
     assert.ok(Math.abs(stats.win_rate - 2 / 3) < 0.01, "win rate should be ~66.7%");
   });

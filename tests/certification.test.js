@@ -28,7 +28,7 @@ function insertWinners(db, count, pool_name = "WIN-SOL") {
       INSERT INTO paper_positions
         (id, pool_address, pool_name, amount_sol, simulated_pnl_sol, simulated_fee_sol,
          entry_time, exit_time, status)
-      VALUES (?, ?, ?, 0.15, 0.005, 0.0001,
+      VALUES (?, ?, ?, 0.15, 0.010, 0.0001,
         strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?),
         strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?),
         'closed')

@@ -66,8 +66,9 @@ export function recordClose(db = getDb(), { pnl_usd = 0, current_sol = null, con
   }
 
   // Atomic: rolling 7d meta writes + circuit_breaker row update in one transaction
-  // so a crash between them can't leave inconsistent state (e.g. rolling loss advanced but daily_loss not)
-  db.transaction(() => {
+  // node:sqlite uses BEGIN/COMMIT, not better-sqlite3's db.transaction()
+  try {
+    db.exec("BEGIN");
     if (pnl_usd < 0) {
       // Rolling 7-day loss tracker — prevents $4.99/day bleed going undetected across UTC midnight resets
       const loss = Math.abs(pnl_usd);
@@ -83,7 +84,11 @@ export function recordClose(db = getDb(), { pnl_usd = 0, current_sol = null, con
       }
     }
     upsertRow(db, { daily_loss_usd, consecutive_losses, date_utc: todayUtc() });
-  })();
+    db.exec("COMMIT");
+  } catch (e) {
+    try { db.exec("ROLLBACK"); } catch {}
+    throw e;
+  }
 
   if (wasTriggered) return { newly_triggered: false, reason: null };
 
