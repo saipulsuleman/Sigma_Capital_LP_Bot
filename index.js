@@ -64,6 +64,7 @@ if (isMain) {
   log("startup", `Mode: ${process.env.DRY_RUN === "true" ? "DRY RUN" : "LIVE"}`);
   log("startup", `Model: ${process.env.LLM_MODEL || "hermes-3-405b"}`);
   try { initCircuit(getDb()); } catch (e) { log("startup_warn", `initCircuit failed: ${e.message}`); }
+  getWalletBalances().then(b => { if ((b?.sol ?? 0) > 0) updatePeak(getDb(), b.sol); }).catch(() => {});
   setLiquidationHook(async () => {
     const db = getDb();
     const openPaper = db.prepare("SELECT id, pool_name FROM paper_positions WHERE status='open'").all();
@@ -1005,7 +1006,7 @@ Summarize the current portfolio health, total fees earned, and performance of al
 
         // Fix 3 + 4: feed paper close into lessons/Darwin/evolveThresholds
         try {
-          const solPrice = (await getWalletBalances({}).catch(() => null))?.sol_price ?? 145;
+          const solPrice = (await getWalletBalances({}).catch(() => null))?.sol_price || 145;
           const feeSol  = pos.simulated_fee_sol  ?? 0;
           const amtSol  = pos.amount_sol         ?? 0;
           await recordPerformance({

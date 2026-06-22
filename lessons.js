@@ -112,7 +112,7 @@ export async function recordPerformance(perf) {
     return;
   }
 
-  const pnl_usd = (perf.final_value_usd + perf.fees_earned_usd) - perf.initial_value_usd;
+  const pnl_usd = (perf.final_value_usd + (perf.fees_earned_usd ?? 0)) - perf.initial_value_usd;
   const pnl_pct = perf.initial_value_usd > 0
     ? (pnl_usd / perf.initial_value_usd) * 100
     : 0;
