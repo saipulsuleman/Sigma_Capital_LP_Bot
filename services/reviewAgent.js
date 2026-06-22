@@ -15,13 +15,27 @@ export async function runReviewAgent() {
   try {
     const db = getDb();
 
-    // Last 10 closed positions from SQLite
-    const positions = db.prepare(`
-      SELECT pool_name, pnl_usd, pnl_pct, strategy, close_reason, closed_at
-      FROM positions
-      ORDER BY closed_at DESC
-      LIMIT 10
-    `).all();
+    // Last 10 closed positions — paper_positions in DRY_RUN, live positions otherwise
+    const isDryRun = process.env.DRY_RUN === "true";
+    const positions = isDryRun
+      ? db.prepare(`
+          SELECT pool_name,
+                 position_type      AS strategy,
+                 simulated_pnl_sol * 145 AS pnl_usd,
+                 exit_reason        AS close_reason,
+                 exit_time          AS closed_at,
+                 amount_sol
+          FROM paper_positions
+          WHERE status = 'closed'
+          ORDER BY exit_time DESC
+          LIMIT 10
+        `).all()
+      : db.prepare(`
+          SELECT pool_name, pnl_usd, pnl_pct, strategy, close_reason, closed_at
+          FROM positions
+          ORDER BY closed_at DESC
+          LIMIT 10
+        `).all();
 
     // Up to 5 most-recent active skill files (400 chars each for context)
     const activeSkillSnippets = [];
@@ -41,12 +55,13 @@ export async function runReviewAgent() {
 
     const positionSummary = positions.length === 0
       ? "No closed positions in database yet."
-      : positions.map(p =>
-          `- ${p.pool_name || "Unknown"}: PnL ${p.pnl_pct != null ? p.pnl_pct.toFixed(1) + "%" : "?"} ` +
-          `($${p.pnl_usd != null ? p.pnl_usd.toFixed(2) : "?"}), ` +
-          `strategy=${p.strategy || "default"}, reason=${p.close_reason || "unknown"}, ` +
-          `date=${p.closed_at?.slice(0, 10) || "?"}`
-        ).join("\n");
+      : positions.map(p => {
+          const pnlStr = p.pnl_usd != null ? `$${Number(p.pnl_usd).toFixed(2)}` : "?";
+          const pctStr = p.pnl_pct != null ? ` (${Number(p.pnl_pct).toFixed(1)}%)` : "";
+          return `- ${p.pool_name || "Unknown"}: PnL ${pnlStr}${pctStr}, ` +
+            `strategy=${p.strategy || "unknown"}, reason=${p.close_reason || "unknown"}, ` +
+            `date=${(p.closed_at || "").slice(0, 10)}`;
+        }).join("\n");
 
     const skillSummary = activeSkillSnippets.length === 0
       ? "No active skills yet — this is the first REVIEW cycle."

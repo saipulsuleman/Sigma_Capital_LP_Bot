@@ -9,7 +9,7 @@ import { getMyPositions, closePosition, getActiveBin } from "./tools/dlmm.js";
 import { getWalletBalances } from "./tools/wallet.js";
 import { getTopCandidates } from "./tools/screening.js";
 import { config, reloadScreeningThresholds, computeDeployAmount } from "./config.js";
-import { evolveThresholds, getPerformanceSummary } from "./lessons.js";
+import { evolveThresholds, getPerformanceSummary, recordPerformance } from "./lessons.js";
 import { executeTool, registerCronRestarter, setCloseHook } from "./tools/executor.js";
 import {
   startPolling,
@@ -1001,6 +1001,41 @@ Summarize the current portfolio health, total fees earned, and performance of al
             resetCounter("closes_since_compound", db);
             log("paper", `Compound triggered! ${accumulated.toFixed(6)} SOL queued for next deploy`);
           }
+        }
+
+        // Fix 3 + 4: feed paper close into lessons/Darwin/evolveThresholds
+        try {
+          const solPrice = (await getWalletBalances({}).catch(() => null))?.sol_price ?? 145;
+          const feeSol  = pos.simulated_fee_sol  ?? 0;
+          const amtSol  = pos.amount_sol         ?? 0;
+          await recordPerformance({
+            position:         pos.id,
+            pool:             pos.pool_address,
+            pool_name:        pos.pool_name || pos.pool_address?.slice(0, 8),
+            strategy:         pos.strategy  || "bid_ask",
+            amount_sol:       amtSol,
+            fees_earned_usd:  feeSol  * solPrice,
+            final_value_usd:  (amtSol + feeSol) * solPrice,
+            initial_value_usd: amtSol * solPrice,
+            minutes_held:     (pos.hours_in_range ?? 0) * 60,
+            minutes_in_range: (pos.hours_in_range ?? 0) * 60,
+            close_reason:     pos.exit_reason || "oor",
+          });
+        } catch (e) {
+          log("paper_warn", `recordPerformance failed for ${pos.id}: ${e.message}`);
+        }
+
+        // Fix 1: increment REVIEW counter; fire runReviewAgent every 5 paper closes
+        try {
+          const db = getDb();
+          const reviewCount = incrementCounter("closes_since_review", db);
+          log("paper", `REVIEW counter: ${reviewCount}/5`);
+          if (reviewCount >= 5) {
+            resetCounter("closes_since_review", db);
+            runReviewAgent().catch((e) => log("review_error", `REVIEW failed: ${e.message}`));
+          }
+        } catch (e) {
+          log("paper_warn", `REVIEW counter update failed: ${e.message}`);
         }
       }
     } catch (e) {
