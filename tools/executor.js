@@ -126,6 +126,7 @@ async function validateDeployPoolThresholds(args) {
   const feeActiveTvlRatio = poolDetailFeeActiveTvlRatio(detail);
   const minFeeActiveTvlRatio = numberOrNull(config.screening.minFeeActiveTvlRatio);
   if (
+    process.env.DRY_RUN !== "true" &&
     minFeeActiveTvlRatio != null &&
     minFeeActiveTvlRatio > 0 &&
     (feeActiveTvlRatio == null || feeActiveTvlRatio < minFeeActiveTvlRatio)
