@@ -9,6 +9,33 @@ import { config } from "../config.js";
 const SKILLS_ACTIVE  = repoPath("skills/active");
 const SKILLS_PENDING = repoPath("skills/pending");
 
+/**
+ * Load approved skill files (skills/active/*.md) as a compact prompt block.
+ * Returns null when there are none. Injected into the SCREENER/MANAGER system
+ * prompt so human-approved skills actually influence decisions — without this the
+ * REVIEW → approve → skills/active feedback loop was open (skills written, never read).
+ *
+ * @param {object} opts
+ * @param {number} [opts.max=5]      - newest N skill files
+ * @param {number} [opts.charCap=400] - chars per skill
+ */
+export function loadActiveSkills({ max = 5, charCap = 400 } = {}) {
+  if (!fs.existsSync(SKILLS_ACTIVE)) return null;
+  let files;
+  try {
+    files = fs.readdirSync(SKILLS_ACTIVE).filter((f) => f.endsWith(".md")).sort().reverse().slice(0, max);
+  } catch { return null; }
+  if (files.length === 0) return null;
+  const snippets = [];
+  for (const f of files) {
+    try {
+      const txt = fs.readFileSync(path.join(SKILLS_ACTIVE, f), "utf8").trim();
+      if (txt) snippets.push(txt.slice(0, charCap));
+    } catch { /* skip unreadable file */ }
+  }
+  return snippets.length ? snippets.join("\n\n") : null;
+}
+
 export async function runReviewAgent() {
   log("review", "REVIEW Agent triggered — analysing last closes");
 

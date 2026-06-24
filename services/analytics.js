@@ -9,6 +9,8 @@
  * Exposed via /analytics Telegram command.
  */
 
+import { ORGANIC_CLOSED_FILTER } from "./paperTrading.js";
+
 /**
  * Holding time bucket: 0=<1h, 1=1-4h, 2=4-24h, 3=>24h
  */
@@ -53,7 +55,7 @@ export function getPaperAnalytics(db) {
     SELECT pool_name, strategy, amount_sol, simulated_pnl_sol, simulated_fee_sol,
            entry_time, exit_time
     FROM paper_positions
-    WHERE status = 'closed' AND exit_time IS NOT NULL
+    WHERE ${ORGANIC_CLOSED_FILTER}
     ORDER BY exit_time DESC
   `).all();
 
@@ -140,7 +142,7 @@ export function getCombinedAnalytics(db) {
   const btWins  = backtestRows.filter((r) => r.actual_outcome === "win").length;
   const backtestWinRate = btTotal > 0 ? btWins / btTotal : null;
 
-  const combinedReturns = db.prepare("SELECT simulated_pnl_sol FROM paper_positions WHERE status = 'closed'").all()
+  const combinedReturns = db.prepare(`SELECT simulated_pnl_sol FROM paper_positions WHERE ${ORGANIC_CLOSED_FILTER}`).all()
     .map((r) => r.simulated_pnl_sol ?? 0);
 
   return {

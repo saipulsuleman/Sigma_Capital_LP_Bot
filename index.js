@@ -1048,7 +1048,9 @@ Summarize the current portfolio health, total fees earned, and performance of al
             strategy:         pos.strategy  || "bid_ask",
             amount_sol:       amtSol,
             fees_earned_usd:  feeSol  * solPrice,
-            final_value_usd:  (amtSol + feeSol) * solPrice,
+            // principal only — recordPerformance adds fees_earned_usd separately
+            // (pnl = final + fees - initial). Including fee here double-counted it.
+            final_value_usd:  amtSol * solPrice,
             initial_value_usd: amtSol * solPrice,
             minutes_held:     (pos.hours_in_range ?? 0) * 60,
             minutes_in_range: (pos.hours_in_range ?? 0) * 60,

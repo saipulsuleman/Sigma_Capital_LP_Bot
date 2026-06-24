@@ -12,6 +12,16 @@ export const PAPER_HOURLY_FEE_RATE = 0.0002;
 export const GAS_ROUND_TRIP_SOL = 0.006;
 
 /**
+ * SQL filter for win-rate / analytics: only count closed positions exited under the
+ * CURRENT OOR logic. Pre-fix `oor:` positions (buggy era — premature upward exits,
+ * ~0.16h holds, ~0 fees) are excluded as corrupt data, not real strategy performance.
+ * Shared by getPaperStats, getPaperAnalytics, and getCombinedAnalytics so the T25 gate,
+ * /paper_stats, and /analytics all agree.
+ */
+export const ORGANIC_CLOSED_FILTER =
+  "status='closed' AND exit_time IS NOT NULL AND (exit_reason IS NULL OR exit_reason NOT LIKE 'oor:%')";
+
+/**
  * Record a new simulated paper position when SCREENER calls deploy_position in DRY_RUN mode.
  * @returns {string} id of the created record
  */
@@ -138,11 +148,11 @@ export async function updatePaperPositions(db = getDb(), getActiveBinFn) {
  */
 export function getPaperStats(db = getDb()) {
   const openRow = db.prepare("SELECT COUNT(*) as count FROM paper_positions WHERE status='open'").get();
-  const closedRow = db.prepare("SELECT COUNT(*) as count FROM paper_positions WHERE status='closed'").get();
-  const winsRow = db.prepare("SELECT COUNT(*) as count FROM paper_positions WHERE status='closed' AND simulated_pnl_sol > ?").get(GAS_ROUND_TRIP_SOL);
+  const closedRow = db.prepare(`SELECT COUNT(*) as count FROM paper_positions WHERE ${ORGANIC_CLOSED_FILTER}`).get();
+  const winsRow = db.prepare(`SELECT COUNT(*) as count FROM paper_positions WHERE ${ORGANIC_CLOSED_FILTER} AND simulated_pnl_sol > ?`).get(GAS_ROUND_TRIP_SOL);
   const pnlRow = db.prepare(`
     SELECT AVG(simulated_pnl_sol) as avg_pnl, SUM(simulated_fee_sol) as total_fee
-    FROM paper_positions WHERE status='closed'
+    FROM paper_positions WHERE ${ORGANIC_CLOSED_FILTER}
   `).get();
 
   const closedCount = closedRow?.count ?? 0;
@@ -152,7 +162,7 @@ export function getPaperStats(db = getDb()) {
   // Holding time histogram
   const holdingRows = db.prepare(`
     SELECT CAST((julianday(exit_time) - julianday(entry_time)) * 24 AS REAL) as hours
-    FROM paper_positions WHERE status='closed' AND exit_time IS NOT NULL AND entry_time IS NOT NULL
+    FROM paper_positions WHERE ${ORGANIC_CLOSED_FILTER} AND entry_time IS NOT NULL
   `).all();
 
   const histogram = { lt1h: 0, h1_4: 0, h4_24: 0, gt24h: 0 };

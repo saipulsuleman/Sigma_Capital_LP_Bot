@@ -132,9 +132,14 @@ HARD RULE (no exceptions):
 - bots > ${config.screening.maxBotHoldersPct}% → already hard-filtered before you see the candidate list.
 
 RISK SIGNALS (guidelines — use judgment):
-- top10 > 60% → concentrated, risky
+- top10 > 40% → concentrated, risky
 - PVP symbol conflict (same exact symbol across multiple mints) → major negative. Avoid unless the setup is exceptional and clearly stronger than the competing symbol variants.
 - no narrative + no smart wallets → skip
+
+MOMENTUM SIGNALS (tiebreaker between qualified candidates — data is in each candidate block):
+- Prefer pools with POSITIVE volume_change_pct and stable/rising fee trend — fees are sustained, not fading.
+- AVOID pools with collapsing volume (large negative volume_change_pct) even if current fee_tvl_ratio looks high — that fee is about to evaporate.
+- A high fee_tvl_ratio on dying volume is a trap; a moderate fee_tvl_ratio on rising volume is durable. Weight durability.
 
 NARRATIVE QUALITY (your main judgment call):
 - GOOD: specific origin — real event, viral moment, named entity, active community

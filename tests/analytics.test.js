@@ -116,6 +116,29 @@ describe("getPaperAnalytics (T24)", () => {
     const a = getPaperAnalytics(db);
     assert.ok(Math.abs(a.avg_pnl_sol - 0.005) < 0.0001, "avg pnl should be 0.005");
   });
+
+  test("excludes pre-fix `oor:` positions but counts new-format exits", () => {
+    const db = makeTmpDb();
+    const insertWithReason = (id, pnl, reason) => db.prepare(`
+      INSERT INTO paper_positions
+        (id, pool_address, pool_name, amount_sol, simulated_pnl_sol, simulated_fee_sol,
+         entry_time, exit_time, exit_reason, status)
+      VALUES (?, ?, ?, 1.0, ?, 0.0001,
+        strftime('%Y-%m-%dT%H:%M:%SZ','now','-5 hours'),
+        strftime('%Y-%m-%dT%H:%M:%SZ','now','-3 hours'), ?, 'closed')
+    `).run(id, `pool_${id}`, "X-SOL", pnl, reason);
+
+    // 2 buggy-era losses (old `oor:` format) — must be excluded from win-rate
+    insertWithReason("old1", 0.000001, "oor:bin=-231");
+    insertWithReason("old2", 0.000001, "oor:bin=-220");
+    // 1 organic win under current logic — must be counted
+    insertWithReason("new1", 0.05, "oor_down:bin=-469");
+
+    const a = getPaperAnalytics(db);
+    assert.equal(a.closed_count, 1, "only the new-format close counts");
+    assert.equal(a.win_count, 1, "the organic close is a win (>0.006 SOL)");
+    assert.equal(a.win_rate, 1, "win_rate ignores contaminated oor: rows");
+  });
 });
 
 // ─── getCombinedAnalytics ─────────────────────────────────────────────────────

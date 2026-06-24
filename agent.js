@@ -161,7 +161,19 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
   // Build dynamic system prompt with current portfolio state
   const [portfolio, positions] = await Promise.all([getWalletBalances(), getMyPositions()]);
   const stateSummary = getStateSummary();
-  const lessons = getLessonsForPrompt({ agentType });
+  let lessons = getLessonsForPrompt({ agentType });
+  // Inject human-approved skill files into decision agents — closes the
+  // REVIEW → approve → skills/active loop (previously skills were never read back).
+  if (agentType === "SCREENER" || agentType === "MANAGER") {
+    try {
+      const { loadActiveSkills } = await import("./services/reviewAgent.js");
+      const skills = loadActiveSkills();
+      if (skills) {
+        const skillBlock = `APPROVED SKILLS (human-reviewed heuristics):\n${skills}`;
+        lessons = lessons ? `${lessons}\n\n${skillBlock}` : skillBlock;
+      }
+    } catch (e) { log("agent_warn", `active skills load failed: ${e.message}`); }
+  }
   const perfSummary = getPerformanceSummary();
   const decisionSummary = getDecisionSummary();
   let weightsSummary = null;
