@@ -7,8 +7,60 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { findBlockedDuplicateCallIds } from "../agent.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+describe("findBlockedDuplicateCallIds — same-response deploy-lock", () => {
+  const ONCE = new Set(["deploy_position", "swap_token", "close_position"]);
+  const call = (id, name) => ({ id, function: { name } });
+
+  test("blocks the 2nd of two deploy_position calls in one response", () => {
+    const blocked = findBlockedDuplicateCallIds(
+      [call("a", "deploy_position"), call("b", "deploy_position")], ONCE);
+    assert.equal(blocked.has("a"), false, "first deploy runs");
+    assert.equal(blocked.has("b"), true, "second deploy blocked");
+  });
+
+  test("does not block a single deploy_position", () => {
+    const blocked = findBlockedDuplicateCallIds([call("a", "deploy_position")], ONCE);
+    assert.equal(blocked.size, 0);
+  });
+
+  test("does not block distinct once-per-session tools", () => {
+    const blocked = findBlockedDuplicateCallIds(
+      [call("a", "deploy_position"), call("b", "swap_token")], ONCE);
+    assert.equal(blocked.size, 0);
+  });
+
+  test("does not block repeated non-once tools (read-only reads)", () => {
+    const blocked = findBlockedDuplicateCallIds(
+      [call("a", "get_active_bin"), call("b", "get_active_bin")], ONCE);
+    assert.equal(blocked.size, 0);
+  });
+
+  test("blocks 2nd+ even with hermes-style name suffix", () => {
+    const blocked = findBlockedDuplicateCallIds(
+      [call("a", "deploy_position<extra"), call("b", "deploy_position")], ONCE);
+    assert.equal(blocked.has("a"), false);
+    assert.equal(blocked.has("b"), true);
+  });
+
+  test("handles null/empty input without throwing", () => {
+    assert.equal(findBlockedDuplicateCallIds(null, ONCE).size, 0);
+    assert.equal(findBlockedDuplicateCallIds([], ONCE).size, 0);
+  });
+});
+
+describe("agent.js null-args guard (source regression)", () => {
+  test("rejects non-object functionArgs before execution", () => {
+    const src = fs.readFileSync(path.join(__dirname, "..", "agent.js"), "utf8");
+    assert.ok(
+      src.includes('typeof functionArgs !== "object"'),
+      "agent.js must guard against null/non-object tool args"
+    );
+  });
+});
 
 describe("MANAGER_TOOLS (T5)", () => {
   test("agent.js MANAGER_TOOLS includes get_wallet_positions", async () => {

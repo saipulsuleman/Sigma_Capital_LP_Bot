@@ -150,6 +150,29 @@ function isThinkingModeToolChoiceError(error) {
 }
 
 /**
+ * Given the tool_calls from a single LLM response, return the set of tool_call ids
+ * that are duplicate invocations of a once-per-session tool (the 2nd+ occurrence of
+ * the same name). The first occurrence runs; later ones are blocked — this closes the
+ * parallel-execution window where `firedOnce` isn't set until after the await.
+ * Pure + exported for unit testing.
+ *
+ * @param {Array}        toolCalls       - msg.tool_calls
+ * @param {Set<string>}  oncePerSession  - tool names allowed at most once per session
+ * @returns {Set<string>} blocked tool_call ids
+ */
+export function findBlockedDuplicateCallIds(toolCalls, oncePerSession) {
+  const blocked = new Set();
+  const seen = new Set();
+  for (const tc of toolCalls ?? []) {
+    const name = tc?.function?.name?.replace(/<.*$/, "").trim();
+    if (!name || !oncePerSession.has(name)) continue;
+    if (seen.has(name)) blocked.add(tc.id);
+    else seen.add(name);
+  }
+  return blocked;
+}
+
+/**
  * Core ReAct agent loop.
  *
  * @param {string} goal - The task description for the agent
@@ -327,10 +350,25 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
       }
       sawToolCall = true;
 
+      // Same-response duplicate guard. Tool calls run in parallel below, but a
+      // once-per-session tool's `firedOnce` lock is only set AFTER its await — so two
+      // identical calls in ONE response (e.g. two deploy_position) would both pass the
+      // firedOnce check at execution time and double-fire. Block every 2nd+ occurrence
+      // of a once-per-session tool in this batch, synchronously, up front.
+      // (Cross-response retries are still handled by the firedOnce check inside the map.)
+      const blockedDuplicateIds = findBlockedDuplicateCallIds(msg.tool_calls, ONCE_PER_SESSION);
+
       // Execute each tool call in parallel
       const toolResults = await Promise.all(msg.tool_calls.map(async (toolCall) => {
         const functionName = toolCall.function.name.replace(/<.*$/, "").trim();
         let functionArgs;
+
+        if (blockedDuplicateIds.has(toolCall.id)) {
+          const reason = `${functionName} called more than once in a single response — only the first call runs.`;
+          log("agent", `Blocked duplicate ${functionName} in same response`);
+          await onToolFinish?.({ name: functionName, args: {}, result: { blocked: true, reason }, success: false, step });
+          return { role: "tool", tool_call_id: toolCall.id, content: JSON.stringify({ blocked: true, reason }) };
+        }
 
         if (invalidToolArgErrors.has(toolCall.id)) {
           const result = {
@@ -366,6 +404,15 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
               content: JSON.stringify(result),
             };
           }
+        }
+
+        // Reject non-object args (e.g. JSON.parse("null") → null, or "5"/"true") before
+        // they reach a tool that destructures them and throws on null.
+        if (functionArgs === null || typeof functionArgs !== "object" || Array.isArray(functionArgs)) {
+          log("error", `Non-object args for ${functionName}: ${JSON.stringify(functionArgs)}`);
+          const result = { success: false, error: `Invalid tool arguments for ${functionName} (expected an object)`, blocked: true };
+          await onToolFinish?.({ name: functionName, args: {}, result, success: false, step });
+          return { role: "tool", tool_call_id: toolCall.id, content: JSON.stringify(result) };
         }
 
         // Block once-per-session tools from firing a second time
