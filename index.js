@@ -10,7 +10,7 @@ import { getWalletBalances } from "./tools/wallet.js";
 import { getTopCandidates } from "./tools/screening.js";
 import { config, reloadScreeningThresholds, computeDeployAmount } from "./config.js";
 import { evolveThresholds, getPerformanceSummary, recordPerformance } from "./lessons.js";
-import { executeTool, registerCronRestarter, setCloseHook } from "./tools/executor.js";
+import { executeTool, registerCronRestarter, setCloseHook, setSlotTimeframeResolver } from "./tools/executor.js";
 import {
   startPolling,
   stopPolling,
@@ -558,6 +558,16 @@ export async function runScreeningCycle({ silent = false } = {}) {
     const slotTypeMap = new Map(candidates.map(p => [p.pool, p._slotType ?? "unknown"]));
     // Map pool address → bin step (bps), needed to mark converted principal to market on exit
     const binStepMap = new Map(candidates.map(p => [p.pool, p.bin_step ?? null]));
+    // Let the executor's live IL gate resolve each pool's precise screening timeframe (minutes)
+    // from its slot, so its fee_tvl_ratio → %/24h conversion matches the paper path exactly.
+    setSlotTimeframeResolver((poolAddr) => {
+      const st = slotTypeMap.get(poolAddr);
+      if (st == null) return null;
+      const tfStr = st === "stable"
+        ? (config.hybridScreening?.stable?.timeframe ?? config.screening.timeframe)
+        : (config.hybridScreening?.meme?.timeframe   ?? config.screening.timeframe);
+      return parseInt(tfStr) || null;
+    });
     const stableCount = candidates.filter(p => p._slotType === "stable").length;
     const memeCount = candidates.filter(p => p._slotType === "meme").length;
     log("screening", `Dual screening: ${stableCount} stable + ${memeCount} meme = ${candidates.length} total candidates`);

@@ -397,6 +397,11 @@ describe("projectDeployEV (IL gate)", () => {
     assert.ok(src.includes("projectDeployEV"), "executor.js must call the IL gate");
     // the gate must not block paper-mode deploys (DRY_RUN keeps the precise index.js gate)
     assert.match(src, /process\.env\.DRY_RUN\s*!==\s*"true"\s*&&\s*args\.fee_tvl_ratio/, "executor IL gate must be guarded to live mode");
+    // live gate resolves the precise per-slot timeframe (not just the global default)
+    assert.ok(src.includes("_slotTimeframeResolver"), "executor IL gate must use the per-slot timeframe resolver");
+
+    const idx = fs.readFileSync(path.join(dir, "..", "index.js"), "utf8");
+    assert.ok(idx.includes("setSlotTimeframeResolver"), "index.js must register the timeframe resolver each screening cycle");
   });
 });
 

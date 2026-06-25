@@ -194,6 +194,12 @@ export function registerCronRestarter(fn) { _cronRestarter = fn; }
 let _closeHook = null;
 export function setCloseHook(fn) { _closeHook = fn; }
 
+// Registered by index.js each screening cycle: resolves a pool's screening timeframe (minutes)
+// from its slot type, so the live IL gate converts fee_tvl_ratio → %/24h precisely instead of
+// assuming the global default timeframe. Returns null for unknown pools (gate falls back).
+let _slotTimeframeResolver = null;
+export function setSlotTimeframeResolver(fn) { _slotTimeframeResolver = fn; }
+
 function coerceBoolean(value, key) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
@@ -807,7 +813,9 @@ async function runSafetyChecks(name, args) {
       // downward-exit conversion/IL loss within our max in-range hold. Mirrors the precise
       // paper-path gate in index.js; guarded to live mode (DRY_RUN uses the paper gate).
       if (process.env.DRY_RUN !== "true" && args.fee_tvl_ratio != null) {
-        const tfMin = parseInt(config.screening.timeframe) || 5;  // best-effort; refine per-slot before go-live
+        // Precise per-slot timeframe from the screener's resolver; fall back to the global default.
+        const resolvedTf = _slotTimeframeResolver?.(args.pool_address);
+        const tfMin = (Number.isFinite(resolvedTf) && resolvedTf > 0) ? resolvedTf : (parseInt(config.screening.timeframe) || 5);
         const feeRate24h = Number(args.fee_tvl_ratio) * (1440 / tfMin);
         const ev = projectDeployEV({
           amount_sol: deployAmountY,
