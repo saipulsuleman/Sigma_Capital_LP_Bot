@@ -12,7 +12,9 @@ import {
   PRIORITY_FEE_ROUND_TRIP_SOL,
   SWAP_SLIPPAGE_PCT,
   DEFAULT_BIN_STEP_BPS,
+  DEFAULT_MAX_BREAK_EVEN_HOURS,
   simulatedExitCosts,
+  projectDeployEV,
   openPaperPosition,
   closePaperPosition,
   updatePaperPositions,
@@ -352,6 +354,39 @@ describe("simulatedExitCosts (realistic costs + IL)", () => {
     const small = simulatedExitCosts({ amount_sol: 0.15, entry_bin: 500, bins_below: 20, entry_bin_step: 100 }, "oor_down:bin=479");
     const large = simulatedExitCosts({ amount_sol: 1.0,  entry_bin: 500, bins_below: 20, entry_bin_step: 100 }, "oor_down:bin=479");
     assert.ok(Math.abs(large.il_loss / small.il_loss - (1.0 / 0.15)) < 1e-6, "IL is proportional to amount_sol");
+  });
+});
+
+// ─── projectDeployEV — pre-deploy IL gate (Lever C) ──────────────────────────────
+
+describe("projectDeployEV (IL gate)", () => {
+  test("rejects a wide-range low-fee position (can't cover IL within max hold)", () => {
+    // wide range (high IL) + low fee → break-even far beyond the cap
+    const ev = projectDeployEV({ amount_sol: 1.0, fee_rate_24h: 1.0, bins_below: 60, bin_step: 100, maxBreakEvenHours: 72 });
+    assert.equal(ev.pass, false, "low fee + wide range is structurally -EV");
+    assert.ok(ev.break_even_hours > 72, "break-even exceeds the cap");
+  });
+
+  test("passes a narrow-range high-fee position (fee clears IL fast)", () => {
+    const ev = projectDeployEV({ amount_sol: 1.0, fee_rate_24h: 20.0, bins_below: 8, bin_step: 100, maxBreakEvenHours: 72 });
+    assert.equal(ev.pass, true, "high fee + narrow range covers IL quickly");
+    assert.ok(ev.break_even_hours <= 72);
+  });
+
+  test("break_even_hours = cost / fee_per_hour", () => {
+    const ev = projectDeployEV({ amount_sol: 1.0, fee_rate_24h: 12.0, bins_below: 20, bin_step: 100, maxBreakEvenHours: 72 });
+    const feePerHour = 1.0 * (12.0 / 100) / 24;
+    assert.ok(Math.abs(ev.fee_per_hour - feePerHour) < 1e-12);
+    assert.ok(Math.abs(ev.break_even_hours - ev.cost_oor_down / feePerHour) < 1e-9);
+  });
+
+  test("zero/again null fee rate → uses fallback rate, not a divide-by-zero", () => {
+    const ev = projectDeployEV({ amount_sol: 1.0, fee_rate_24h: null, bins_below: 20, bin_step: 100, maxBreakEvenHours: 72 });
+    assert.ok(Number.isFinite(ev.break_even_hours), "fallback fee rate keeps break-even finite");
+  });
+
+  test("default cap constant is 72h", () => {
+    assert.equal(DEFAULT_MAX_BREAK_EVEN_HOURS, 72);
   });
 });
 

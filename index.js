@@ -42,7 +42,7 @@ import { runReviewAgent } from "./services/reviewAgent.js";
 import { checkAllocation } from "./utils/allocation.js";
 import { checkBudget, getDailyUsage, LOW_SOL_THRESHOLD } from "./utils/budget.js";
 import { isConservativeMode, recordApiSuccess } from "./utils/conservative.js";
-import { openPaperPosition, updatePaperPositions, getPaperStats, closePaperPosition } from "./services/paperTrading.js";
+import { openPaperPosition, updatePaperPositions, getPaperStats, closePaperPosition, projectDeployEV, DEFAULT_MAX_BREAK_EVEN_HOURS } from "./services/paperTrading.js";
 import { getCircuitStatus, resetCircuit, initCircuit, updatePeak, setLiquidationHook } from "./utils/circuitBreaker.js";
 import { archiveOldPositions } from "./services/positionMemory.js";
 import { getDevnetSummary, isDevnetMode } from "./services/devnetRunner.js";
@@ -796,27 +796,51 @@ IMPORTANT:
                   setMeta("pending_compound_sol", 0, db);
                   log("paper", `Compounding ${pendingCompound.toFixed(6)} SOL → deploy ${deployAmount.toFixed(6)} SOL total`);
                 }
-                openPaperPosition(db, {
-                  pool_address: poolAddr,
-                  pool_name: args?.pool_name || null,
-                  entry_bin: entryBinResult.binId,
-                  bins_below: (result?.would_deploy?.bins_below ?? Number(args?.bins_below)) || 0,
-                  bins_above: (result?.would_deploy?.bins_above ?? Number(args?.bins_above)) || 0,
+                const binsBelow = (result?.would_deploy?.bins_below ?? Number(args?.bins_below)) || 0;
+                const slotType = slotTypeMap.get(poolAddr) ?? "unknown";
+                const binStep = binStepMap.get(poolAddr) ?? null;
+                // fee_active_tvl_ratio from Meteora API is per-timeframe (e.g. per 5m), not per 24h.
+                // Convert to %/24h so closePaperPosition's formula (feeRate/100/24) is accurate.
+                const feeRate24h = (() => {
+                  if (args?.fee_tvl_ratio == null) return null;
+                  const tfStr = slotType === "stable"
+                    ? (config.hybridScreening?.stable?.timeframe ?? config.screening.timeframe)
+                    : (config.hybridScreening?.meme?.timeframe   ?? config.screening.timeframe);
+                  const tfMin = parseInt(tfStr) || 5;
+                  return Number(args.fee_tvl_ratio) * (1440 / tfMin);
+                })();
+
+                // Lever C — pre-deploy IL gate: reject positions whose fees can't cover a
+                // worst-case downward exit (conversion/IL + costs) within our max in-range hold.
+                const ev = projectDeployEV({
                   amount_sol: deployAmount,
-                  fee_rate_24h: (() => {
-                    // fee_active_tvl_ratio from Meteora API is per-timeframe (e.g. per 5m), not per 24h.
-                    // Convert to %/24h so closePaperPosition's formula (feeRate/100/24) is accurate.
-                    if (args?.fee_tvl_ratio == null) return null;
-                    const st = slotTypeMap.get(poolAddr) ?? "unknown";
-                    const tfStr = st === "stable"
-                      ? (config.hybridScreening?.stable?.timeframe ?? config.screening.timeframe)
-                      : (config.hybridScreening?.meme?.timeframe   ?? config.screening.timeframe);
-                    const tfMin = parseInt(tfStr) || 5;
-                    return Number(args.fee_tvl_ratio) * (1440 / tfMin);
-                  })(),
-                  position_type: slotTypeMap.get(poolAddr) ?? "unknown",
-                  bin_step: binStepMap.get(poolAddr) ?? null,
+                  fee_rate_24h: feeRate24h,
+                  bins_below: binsBelow,
+                  bin_step: binStep,
+                  maxBreakEvenHours: config.management?.maxBreakEvenHours ?? DEFAULT_MAX_BREAK_EVEN_HOURS,
                 });
+                if (!ev.pass) {
+                  const beStr = Number.isFinite(ev.break_even_hours) ? ev.break_even_hours.toFixed(0) : "∞";
+                  log("paper", `IL gate: skipped ${args?.pool_name || poolAddr} — break-even ${beStr}h > ${config.management?.maxBreakEvenHours ?? DEFAULT_MAX_BREAK_EVEN_HOURS}h cap (oor_down cost ${ev.cost_oor_down.toFixed(4)} SOL vs fee ${ev.fee_per_hour.toFixed(6)} SOL/h)`);
+                  appendDecision({
+                    type: "no_deploy",
+                    actor: "SCREENER",
+                    summary: "Rejected -EV position (IL gate)",
+                    reason: `break-even ${beStr}h exceeds ${config.management?.maxBreakEvenHours ?? DEFAULT_MAX_BREAK_EVEN_HOURS}h — fees can't cover worst-case oor_down conversion loss`,
+                  });
+                } else {
+                  openPaperPosition(db, {
+                    pool_address: poolAddr,
+                    pool_name: args?.pool_name || null,
+                    entry_bin: entryBinResult.binId,
+                    bins_below: binsBelow,
+                    bins_above: (result?.would_deploy?.bins_above ?? Number(args?.bins_above)) || 0,
+                    amount_sol: deployAmount,
+                    fee_rate_24h: feeRate24h,
+                    position_type: slotType,
+                    bin_step: binStep,
+                  });
+                }
               }
             }
           }

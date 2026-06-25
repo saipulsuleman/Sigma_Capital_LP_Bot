@@ -57,6 +57,39 @@ export function simulatedExitCosts(pos, exit_reason) {
   return { gas, priority, il_loss, swap_slippage, total: gas + priority + il_loss + swap_slippage };
 }
 
+// A position must earn enough fees to cover its worst-case downward-exit cost within this
+// many in-range hours, else it's rejected pre-deploy as structurally -EV (Lever C, IL gate).
+export const DEFAULT_MAX_BREAK_EVEN_HOURS = 72;
+
+/**
+ * Pre-deploy IL gate: project whether a candidate can plausibly be net-positive before
+ * opening it. Compares fee earned per in-range hour against the worst-case cost of a
+ * downward exit at the range bottom (conversion/IL + swap slippage + gas + priority).
+ * Returns the break-even in-range hours and a pass flag. Pure + exported for the live
+ * gate and tests. A pool that needs more in-range hours than we'd ever hold is rejected.
+ *
+ * @returns {{ cost_oor_down: number, fee_per_hour: number, break_even_hours: number, pass: boolean }}
+ */
+export function projectDeployEV({
+  amount_sol,
+  fee_rate_24h = null,
+  bins_below = 0,
+  bin_step = null,
+  maxBreakEvenHours = DEFAULT_MAX_BREAK_EVEN_HOURS,
+} = {}) {
+  const bb = Number(bins_below) || 0;
+  const cost = simulatedExitCosts(
+    { amount_sol, entry_bin: 0, bins_below: bb, entry_bin_step: bin_step },
+    `oor_down:bin=${-bb}`,
+  );
+  const hourlyRate = fee_rate_24h != null && Number.isFinite(Number(fee_rate_24h))
+    ? (Number(fee_rate_24h) / 100) / 24
+    : PAPER_HOURLY_FEE_RATE;
+  const fee_per_hour = amount_sol * hourlyRate;
+  const break_even_hours = fee_per_hour > 0 ? cost.total / fee_per_hour : Infinity;
+  return { cost_oor_down: cost.total, fee_per_hour, break_even_hours, pass: break_even_hours <= maxBreakEvenHours };
+}
+
 /**
  * SQL filter for win-rate / analytics: only count closed positions exited under the
  * CURRENT OOR logic. Pre-fix `oor:` positions (buggy era — premature upward exits,

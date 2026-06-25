@@ -126,6 +126,9 @@ export const config = {
     deployAmountSol:       u.deployAmountSol       ?? 0.5,
     gasReserve:            u.gasReserve            ?? 0.2,
     positionSizePct:       u.positionSizePct       ?? 0.35,
+    // Pre-deploy IL gate: reject a position if it would need more than this many in-range
+    // hours to earn enough fee to cover a worst-case downward exit (conversion/IL + costs).
+    maxBreakEvenHours:     u.maxBreakEvenHours     ?? 72,
     // Trailing take-profit
     trailingTakeProfit:    u.trailingTakeProfit    ?? true,
     trailingTriggerPct:    u.trailingTriggerPct    ?? 3,    // activate trailing at X% PnL
