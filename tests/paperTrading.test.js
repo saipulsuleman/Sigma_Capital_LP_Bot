@@ -4,7 +4,9 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import os from "os";
+import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { openDb, applySchema } from "../db/db.js";
 import {
   PAPER_HOURLY_FEE_RATE,
@@ -387,6 +389,14 @@ describe("projectDeployEV (IL gate)", () => {
 
   test("default cap constant is 72h", () => {
     assert.equal(DEFAULT_MAX_BREAK_EVEN_HOURS, 72);
+  });
+
+  test("live gate is wired into executor.js, guarded to live mode", () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const src = fs.readFileSync(path.join(dir, "..", "tools", "executor.js"), "utf8");
+    assert.ok(src.includes("projectDeployEV"), "executor.js must call the IL gate");
+    // the gate must not block paper-mode deploys (DRY_RUN keeps the precise index.js gate)
+    assert.match(src, /process\.env\.DRY_RUN\s*!==\s*"true"\s*&&\s*args\.fee_tvl_ratio/, "executor IL gate must be guarded to live mode");
   });
 });
 

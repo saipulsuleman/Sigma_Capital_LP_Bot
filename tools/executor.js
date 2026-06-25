@@ -22,6 +22,7 @@ import { addSmartWallet, removeSmartWallet, listSmartWallets, checkSmartWalletsO
 import { getTokenInfo, getTokenHolders, getTokenNarrative } from "./token.js";
 import { getTokenMarketData } from "./marketData.js";
 import { queryPositionMemory } from "../services/positionMemory.js";
+import { projectDeployEV } from "../services/paperTrading.js";
 import { config, reloadScreeningThresholds, MIN_SAFE_BINS_BELOW } from "../config.js";
 import { getRecentDecisions } from "../decision-log.js";
 import fs from "fs";
@@ -800,6 +801,28 @@ async function runSafetyChecks(name, args) {
           pass: false,
           reason: "Single-side SOL deploy must use bins_above=0.",
         };
+      }
+
+      // Lever C (live): reject structurally -EV deploys — fees can't cover the worst-case
+      // downward-exit conversion/IL loss within our max in-range hold. Mirrors the precise
+      // paper-path gate in index.js; guarded to live mode (DRY_RUN uses the paper gate).
+      if (process.env.DRY_RUN !== "true" && args.fee_tvl_ratio != null) {
+        const tfMin = parseInt(config.screening.timeframe) || 5;  // best-effort; refine per-slot before go-live
+        const feeRate24h = Number(args.fee_tvl_ratio) * (1440 / tfMin);
+        const ev = projectDeployEV({
+          amount_sol: deployAmountY,
+          fee_rate_24h: feeRate24h,
+          bins_below: requestedBinsBelow,
+          bin_step: args.bin_step,
+          maxBreakEvenHours: config.management?.maxBreakEvenHours ?? 72,
+        });
+        if (!ev.pass) {
+          const beStr = Number.isFinite(ev.break_even_hours) ? ev.break_even_hours.toFixed(0) : "∞";
+          return {
+            pass: false,
+            reason: `IL gate: break-even ${beStr}h exceeds ${config.management?.maxBreakEvenHours ?? 72}h cap — fees can't cover worst-case downward-exit conversion loss.`,
+          };
+        }
       }
 
       // Check position count limit + duplicate pool guard — force fresh scan to avoid stale cache
