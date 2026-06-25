@@ -9,7 +9,9 @@ const USER_CONFIG_PATH = repoPath("user-config.json");
 const u = fs.existsSync(USER_CONFIG_PATH)
   ? JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8"))
   : {};
-export const MIN_SAFE_BINS_BELOW = 35;
+// Hard floor on single-sided bins_below. Set low to allow narrow ranges that cap
+// conversion/IL loss on a downward exit; still refuses 1-5 bin tiny/churn deploys.
+export const MIN_SAFE_BINS_BELOW = 6;
 
 function numericConfig(value) {
   const n = Number(value);

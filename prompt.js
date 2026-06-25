@@ -150,11 +150,11 @@ POOL MEMORY: Past losses or problems → strong skip signal.
 
 DEPLOY RULES:
 - COMPOUNDING: Use the deploy amount from the goal EXACTLY. Do NOT default to a smaller number.
-- bins_below = round(config.strategy.minBinsBelow + (candidate volatility/5)*(config.strategy.maxBinsBelow-config.strategy.minBinsBelow)) clamped to [minBinsBelow,maxBinsBelow]. Volatility must be a positive number; 0/unknown means skip.
+- bins_below = round(${config.strategy.maxBinsBelow} - min(candidate volatility/5, 1)*(${config.strategy.maxBinsBelow}-${config.strategy.minBinsBelow})) clamped to [${config.strategy.minBinsBelow},${config.strategy.maxBinsBelow}]. HIGH volatility → NARROW range (toward ${config.strategy.minBinsBelow}); LOW volatility → wider (toward ${config.strategy.maxBinsBelow}). Volatility must be a positive number; 0/unknown means skip.
 - Use amount_y only, keep amount_x=0 and bins_above=0.
 - Bin steps must be [80-125].
 - Pick ONE pool only when conviction is real. If only one weak candidate survives, skip and explain why none qualify.
-- RANGE PLACEMENT: For single-sided LP (bins_above=0), bias toward MAX bins_below (close to maxBinsBelow=69). A wider range below current price means more room to earn fees before going OOR down. Prefer bins_below >= 55 unless volatility is very low.
+- RANGE PLACEMENT (single-sided, bins_above=0): A NARROW range caps the conversion/impermanent loss realized when price exits downward — your SOL converts to the falling token, and a wider range means you bought it further down (much larger loss). For volatile pools use a narrow range near ${config.strategy.minBinsBelow}; only widen toward ${config.strategy.maxBinsBelow} for low-volatility pools unlikely to crash through the range. Wider earns more fees ONLY if price holds; a wide range that goes OOR-down realizes a far larger loss.
 
 ${hotMemoryBlock}${weightsSummary ? `${weightsSummary}\nPrioritize candidates whose strongest attributes align with high-weight signals.\n\n` : ""}${lessons ? `LESSONS LEARNED:\n${lessons}\n` : ""}Timestamp: ${new Date().toISOString()}
 `;

@@ -52,6 +52,21 @@ describe("findBlockedDuplicateCallIds — same-response deploy-lock", () => {
   });
 });
 
+describe("range strategy aligned with IL economics (source regression)", () => {
+  test("MIN_SAFE_BINS_BELOW lowered to allow narrow (low-IL) ranges", () => {
+    const src = fs.readFileSync(path.join(__dirname, "..", "config.js"), "utf8");
+    const m = src.match(/MIN_SAFE_BINS_BELOW\s*=\s*(\d+)/);
+    assert.ok(m, "MIN_SAFE_BINS_BELOW must be defined");
+    assert.ok(Number(m[1]) <= 12, `MIN_SAFE_BINS_BELOW should allow narrow ranges, got ${m[1]}`);
+  });
+
+  test("SCREENER prompt no longer advises maximizing bins_below", () => {
+    const src = fs.readFileSync(path.join(__dirname, "..", "prompt.js"), "utf8");
+    assert.ok(!/bias toward MAX bins_below/i.test(src), "prompt must not tell the LLM to maximize range (that maximizes IL)");
+    assert.ok(/HIGH volatility/.test(src) && /NARROW range/i.test(src), "prompt must advise narrow range for volatile pools");
+  });
+});
+
 describe("agent.js null-args guard (source regression)", () => {
   test("rejects non-object functionArgs before execution", () => {
     const src = fs.readFileSync(path.join(__dirname, "..", "agent.js"), "utf8");
