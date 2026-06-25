@@ -556,6 +556,8 @@ export async function runScreeningCycle({ silent = false } = {}) {
 
     // Map pool address → slot type for paper trading record
     const slotTypeMap = new Map(candidates.map(p => [p.pool, p._slotType ?? "unknown"]));
+    // Map pool address → bin step (bps), needed to mark converted principal to market on exit
+    const binStepMap = new Map(candidates.map(p => [p.pool, p.bin_step ?? null]));
     const stableCount = candidates.filter(p => p._slotType === "stable").length;
     const memeCount = candidates.filter(p => p._slotType === "meme").length;
     log("screening", `Dual screening: ${stableCount} stable + ${memeCount} meme = ${candidates.length} total candidates`);
@@ -813,6 +815,7 @@ IMPORTANT:
                     return Number(args.fee_tvl_ratio) * (1440 / tfMin);
                   })(),
                   position_type: slotTypeMap.get(poolAddr) ?? "unknown",
+                  bin_step: binStepMap.get(poolAddr) ?? null,
                 });
               }
             }

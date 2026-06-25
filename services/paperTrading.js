@@ -7,9 +7,55 @@ import { log } from "../logger.js";
  */
 export const PAPER_HOURLY_FEE_RATE = 0.0002;
 
-// Live gas cost per position (deploy + close). Win in paper trading = earned more than this.
+// Live gas cost per position (deploy + close base transactions).
 // Matches GAS_SOL constant in scripts/monte_carlo.py for 1:1 simulation accuracy.
 export const GAS_ROUND_TRIP_SOL = 0.006;
+// Priority / Jito tips to land the deploy + close (+ swap-back) txs on a busy validator.
+export const PRIORITY_FEE_ROUND_TRIP_SOL = 0.0004;
+// Slippage paid when swapping the converted token back to SOL on a downward exit.
+export const SWAP_SLIPPAGE_PCT = 0.05;
+// Fallback bin step (bps) for positions opened before entry_bin_step was recorded.
+export const DEFAULT_BIN_STEP_BPS = 100;
+
+/** Parse the bin id out of an exit_reason like "oor_down:bin=-469". */
+function parseExitBin(reason) {
+  const m = /bin=(-?\d+)/.exec(reason ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Estimate the real costs a paper position would pay at close, in SOL, so paper PnL
+ * tracks a live close. Returns { gas, priority, il_loss, swap_slippage, total }.
+ *
+ * Conversion / impermanent loss applies only to downward exits (oor_down). Single-sided
+ * SOL liquidity sits in bins BELOW price; as price falls the SOL is swapped into the
+ * token, so at a downward exit the principal is now token worth less than the SOL
+ * deposited. We mark it to market at the exit bin using the geometric-mean average buy
+ * price across the range: value/principal = r^((exit_bin - entry_bin) + bins_below/2),
+ * where r = 1 + bin_step/10000. Upward / max-hold exits leave SOL intact (no IL).
+ *
+ * Pure + exported for unit testing.
+ */
+export function simulatedExitCosts(pos, exit_reason) {
+  const gas = GAS_ROUND_TRIP_SOL;
+  const priority = PRIORITY_FEE_ROUND_TRIP_SOL;
+  let il_loss = 0;
+  let swap_slippage = 0;
+
+  const isDownExit = typeof exit_reason === "string" && exit_reason.startsWith("oor_down");
+  const exitBin = parseExitBin(exit_reason);
+  if (isDownExit && pos.entry_bin != null && exitBin != null) {
+    const binStepBps = pos.entry_bin_step ?? DEFAULT_BIN_STEP_BPS;
+    const r = 1 + binStepBps / 10000;
+    const binsBelow = Number(pos.bins_below) || 0;
+    const exponent = (exitBin - pos.entry_bin) + binsBelow / 2;
+    const conversionRatio = Math.min(1, Math.max(0, Math.pow(r, exponent)));
+    const principalValueSol = pos.amount_sol * conversionRatio;
+    il_loss = pos.amount_sol - principalValueSol;
+    swap_slippage = principalValueSol * SWAP_SLIPPAGE_PCT;
+  }
+  return { gas, priority, il_loss, swap_slippage, total: gas + priority + il_loss + swap_slippage };
+}
 
 /**
  * SQL filter for win-rate / analytics: only count closed positions exited under the
@@ -36,18 +82,20 @@ export function openPaperPosition(db = getDb(), {
   reasoning_summary = null,
   fee_rate_24h = null,  // fee_tvl_ratio converted to %/24h (caller must normalize from per-timeframe)
   position_type = "unknown",  // "stable" | "meme" | "unknown" from dual screening slot
+  bin_step = null,      // pool bin step (bps) — needed to mark converted principal to market on exit
 } = {}) {
   if (!pool_address) throw new Error("pool_address is required");
   if (!amount_sol || amount_sol <= 0) throw new Error("amount_sol must be positive");
 
   const id = `${pool_address}_${Date.now()}`;
   const parsedFeeRate = fee_rate_24h != null && Number.isFinite(Number(fee_rate_24h)) ? Number(fee_rate_24h) : null;
+  const parsedBinStep = bin_step != null && Number.isFinite(Number(bin_step)) ? Number(bin_step) : null;
 
   db.prepare(`
     INSERT INTO paper_positions
-      (id, pool_address, pool_name, strategy, entry_bin, bins_below, bins_above, amount_sol, entry_fee_rate_24h, reasoning_summary, position_type)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, pool_address, pool_name ?? null, strategy ?? null, entry_bin ?? null, bins_below, bins_above, amount_sol, parsedFeeRate, reasoning_summary ?? null, position_type);
+      (id, pool_address, pool_name, strategy, entry_bin, bins_below, bins_above, amount_sol, entry_fee_rate_24h, reasoning_summary, position_type, entry_bin_step)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, pool_address, pool_name ?? null, strategy ?? null, entry_bin ?? null, bins_below, bins_above, amount_sol, parsedFeeRate, reasoning_summary ?? null, position_type, parsedBinStep);
 
   const feeNote = parsedFeeRate != null
     ? ` fee_rate=${parsedFeeRate}%/24h → est ${(amount_sol * parsedFeeRate / 100).toFixed(5)} SOL/24h if in range`
@@ -76,9 +124,12 @@ export function closePaperPosition(db = getDb(), id, exit_reason = "oor") {
     const hourlyRate = pos.entry_fee_rate_24h != null
       ? (pos.entry_fee_rate_24h / 100) / 24
       : PAPER_HOURLY_FEE_RATE;
-    const simulated_fee_sol = pos.amount_sol * hourlyRate * hoursInRange;
-    // Single-side SOL deploy: no impermanent loss when in range, PnL = earned fees
-    const simulated_pnl_sol = simulated_fee_sol;
+    const simulated_fee_sol = pos.amount_sol * hourlyRate * hoursInRange;  // gross fees earned
+    // Net PnL: subtract every cost a live close would pay — gas + priority fee, plus on a
+    // downward exit the conversion/impermanent loss (SOL swapped into a now-cheaper token)
+    // and the slippage to swap it back. Keeps paper PnL close to live reality.
+    const costs = simulatedExitCosts({ ...pos, exit_reason }, exit_reason);
+    const simulated_pnl_sol = simulated_fee_sol - costs.total;
 
     db.prepare(`
       UPDATE paper_positions
@@ -87,7 +138,7 @@ export function closePaperPosition(db = getDb(), id, exit_reason = "oor") {
     `).run(now, exit_reason, simulated_fee_sol, simulated_pnl_sol, id);
 
     db.exec("COMMIT");
-    log("paper", `Closed paper position ${id}: ${exit_reason} | holding=${hoursInRange.toFixed(2)}h | fee=${simulated_fee_sol.toFixed(6)} SOL`);
+    log("paper", `Closed paper position ${id}: ${exit_reason} | holding=${hoursInRange.toFixed(2)}h | fee=${simulated_fee_sol.toFixed(6)} SOL | costs=${costs.total.toFixed(6)} (il=${costs.il_loss.toFixed(6)}) | net=${simulated_pnl_sol.toFixed(6)} SOL`);
     return { id, pool_address: pos.pool_address, pool_name: pos.pool_name, simulated_fee_sol, simulated_pnl_sol, exit_reason, hours_in_range: hoursInRange };
   } catch (e) {
     try { db.exec("ROLLBACK"); } catch {}
@@ -149,7 +200,8 @@ export async function updatePaperPositions(db = getDb(), getActiveBinFn) {
 export function getPaperStats(db = getDb()) {
   const openRow = db.prepare("SELECT COUNT(*) as count FROM paper_positions WHERE status='open'").get();
   const closedRow = db.prepare(`SELECT COUNT(*) as count FROM paper_positions WHERE ${ORGANIC_CLOSED_FILTER}`).get();
-  const winsRow = db.prepare(`SELECT COUNT(*) as count FROM paper_positions WHERE ${ORGANIC_CLOSED_FILTER} AND simulated_pnl_sol > ?`).get(GAS_ROUND_TRIP_SOL);
+  // simulated_pnl_sol is already net of all costs (gas, priority, slippage, IL) — a win is net-positive.
+  const winsRow = db.prepare(`SELECT COUNT(*) as count FROM paper_positions WHERE ${ORGANIC_CLOSED_FILTER} AND simulated_pnl_sol > 0`).get();
   const pnlRow = db.prepare(`
     SELECT AVG(simulated_pnl_sol) as avg_pnl, SUM(simulated_fee_sol) as total_fee
     FROM paper_positions WHERE ${ORGANIC_CLOSED_FILTER}

@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS paper_positions (
   entry_fee_rate_24h REAL,   -- fee_tvl_ratio (%) from Meteora at deploy time; NULL = use constant fallback
   reasoning_summary  TEXT,
   position_type      TEXT NOT NULL DEFAULT 'unknown',
+  entry_bin_step     REAL,    -- pool bin step (bps) at entry; marks converted principal to market on exit
   status             TEXT NOT NULL DEFAULT 'open'
 );
 

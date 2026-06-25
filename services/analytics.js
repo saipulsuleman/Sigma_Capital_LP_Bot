@@ -60,10 +60,10 @@ export function getPaperAnalytics(db) {
   `).all();
 
   const closedCount = closed.length;
-  // Win = net profitable after gas cost (must earn more than 0.006 SOL gas round-trip)
-  // Matches GAS_ROUND_TRIP_SOL in paperTrading.js so analytics and T25 gate agree
-  const GAS_ROUND_TRIP_SOL = 0.006;
-  const winCount  = closed.filter((r) => (r.simulated_pnl_sol ?? 0) > GAS_ROUND_TRIP_SOL).length;
+  // simulated_pnl_sol is already net of every cost (gas, priority fee, swap slippage, and
+  // conversion/impermanent loss — see simulatedExitCosts in paperTrading.js), so a win is
+  // simply net-positive. Analytics and the T25 gate agree on this definition.
+  const winCount  = closed.filter((r) => (r.simulated_pnl_sol ?? 0) > 0).length;
   const lossCount = closedCount - winCount;
   const winRate   = closedCount > 0 ? winCount / closedCount : null;
 

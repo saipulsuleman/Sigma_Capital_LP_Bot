@@ -35,6 +35,7 @@ export function runMigrations(db) {
     "ALTER TABLE positions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
     "ALTER TABLE paper_positions ADD COLUMN entry_fee_rate_24h REAL",
     "ALTER TABLE paper_positions ADD COLUMN position_type TEXT DEFAULT 'meme'",
+    "ALTER TABLE paper_positions ADD COLUMN entry_bin_step REAL",
   ];
   for (const sql of addColumns) {
     try { db.exec(sql); } catch (e) {
