@@ -537,20 +537,36 @@ export async function runScreeningCycle({ silent = false } = {}) {
         getTopCandidates({ limit: 5, screeningOverrides: hybridCfg.stable }),
         getTopCandidates({ limit: 5, screeningOverrides: hybridCfg.meme }),
       ]);
+      // Normalize fee to %/24h per slot so stable (30m) and meme (5m) are comparable.
+      const stableTf = parseInt(hybridCfg.stable.timeframe) || 30;
+      const memeTf = parseInt(hybridCfg.meme.timeframe) || 5;
+      const withFee24h = (p, tfMin) => ({
+        ...p,
+        _feeRate24h: p.fee_active_tvl_ratio != null ? Number(p.fee_active_tvl_ratio) * (1440 / tfMin) : null,
+      });
       const stablePools = (stableResult.status === "fulfilled" ? (stableResult.value?.candidates || []) : [])
-        .map(p => ({ ...p, _slotType: "stable" }));
+        .map(p => withFee24h({ ...p, _slotType: "stable" }, stableTf));
       const seenPools = new Set(stablePools.map(p => p.pool));
       const memePools = (memeResult.status === "fulfilled" ? (memeResult.value?.candidates || []) : [])
         .filter(p => !seenPools.has(p.pool))
-        .map(p => ({ ...p, _slotType: "meme" }));
-      candidates = [...stablePools, ...memePools].slice(0, 10);
+        .map(p => withFee24h({ ...p, _slotType: "meme" }, memeTf));
+      // Rank globally by 24h fee — fee is the validated profitability driver, and raw
+      // per-timeframe fee_active_tvl_ratio isn't comparable across slots until normalized.
+      candidates = [...stablePools, ...memePools]
+        .sort((a, b) => (b._feeRate24h ?? -1) - (a._feeRate24h ?? -1))
+        .slice(0, 10);
       earlyFilteredExamples = [
         ...(stableResult.status === "fulfilled" ? (stableResult.value?.filtered_examples || []) : []),
         ...(memeResult.status === "fulfilled" ? (memeResult.value?.filtered_examples || []) : []),
       ];
     } else {
       const topCandidates = await getTopCandidates({ limit: 10 }).catch(() => null);
-      candidates = (topCandidates?.candidates || topCandidates?.pools || []).map(p => ({ ...p, _slotType: "unknown" }));
+      const tfMin = parseInt(config.screening.timeframe) || 5;
+      candidates = (topCandidates?.candidates || topCandidates?.pools || []).map(p => ({
+        ...p,
+        _slotType: "unknown",
+        _feeRate24h: p.fee_active_tvl_ratio != null ? Number(p.fee_active_tvl_ratio) * (1440 / tfMin) : null,
+      }));
       earlyFilteredExamples = topCandidates?.filtered_examples || [];
     }
 
@@ -685,7 +701,7 @@ export async function runScreeningCycle({ silent = false } = {}) {
 
       const block = [
         `POOL: ${pool.name} (${pool.pool})`,
-        pool._slotType ? `  type: ${pool._slotType}` : null,
+        pool._slotType ? `  type: ${pool._slotType}${pool._feeRate24h != null ? ` | fee_24h=${pool._feeRate24h.toFixed(1)}% (normalized, compare across types)` : ""}` : null,
         `  metrics: bin_step=${pool.bin_step}, fee_pct=${pool.fee_pct}%, fee_tvl=${pool.fee_active_tvl_ratio}, vol=$${pool.volume_window}, tvl=$${pool.tvl ?? pool.active_tvl}, volatility_${pool.volatility_timeframe || "30m"}=${pool.volatility}, mcap=$${pool.mcap}, organic=${pool.organic_score}${pool.token_age_hours != null ? `, age=${pool.token_age_hours}h` : ""}`,
         `  audit: top10=${top10Pct}%, bots=${botPct}%, fees=${feesSol}SOL${launchpad ? `, launchpad=${launchpad}` : ""}`,
         pvpLine,
