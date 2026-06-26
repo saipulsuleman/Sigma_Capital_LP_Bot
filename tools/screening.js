@@ -30,12 +30,18 @@ function normalizeSymbol(symbol) {
   return String(symbol || "").trim().toUpperCase();
 }
 
-function scoreCandidate(pool) {
+// Rank candidates by validated profitability: fee rate is THE driver of net PnL (a
+// position must out-earn its conversion/IL loss over a long hold). organic_score is
+// already enforced as a hard floor (minOrganic) so it only needs to be a quality nudge
+// here, not the dominant term. Candidates within one call share a timeframe, so the raw
+// per-timeframe fee_active_tvl_ratio is comparable. Earlier this weighted fee × 1000
+// (dwarfed by organic × 10) — backwards vs the validated recipe.
+export function scoreCandidate(pool) {
   const feeTvl = Number(pool.fee_active_tvl_ratio || 0);
   const organic = Number(pool.organic_score || 0);
   const volume = Number(pool.volume_window || 0);
   const holders = Number(pool.holders || 0);
-  return feeTvl * 1000 + organic * 10 + volume / 100 + holders / 100;
+  return feeTvl * 100000 + organic * 10 + volume / 100 + holders / 100;
 }
 
 function numeric(value) {
