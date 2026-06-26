@@ -699,9 +699,16 @@ export async function runScreeningCycle({ silent = false } = {}) {
         ? `  pvp: HIGH — rival ${pool.pvp_rival_name || pool.pvp_symbol} (${pool.pvp_rival_mint?.slice(0, 8)}...) has pool ${pool.pvp_rival_pool?.slice(0, 8)}..., tvl=$${pool.pvp_rival_tvl}, holders=${pool.pvp_rival_holders}, fees=${pool.pvp_rival_fees}SOL`
         : null;
 
+      // Preview the IL gate per candidate (at the default wide range) so the LLM never picks
+      // a pool the gate will reject, and is steered toward the highest-fee deployable pools.
+      const gatePreview = pool._feeRate24h != null
+        ? projectDeployEV({ amount_sol: 1, fee_rate_24h: pool._feeRate24h, bins_below: config.strategy.defaultBinsBelow, bin_step: pool.bin_step ?? 100, maxBreakEvenHours: config.management?.maxBreakEvenHours ?? DEFAULT_MAX_BREAK_EVEN_HOURS })
+        : null;
+
       const block = [
         `POOL: ${pool.name} (${pool.pool})`,
         pool._slotType ? `  type: ${pool._slotType}${pool._feeRate24h != null ? ` | fee_24h=${pool._feeRate24h.toFixed(1)}% (normalized, compare across types)` : ""}` : null,
+        gatePreview ? `  IL_gate: ${gatePreview.pass ? "DEPLOYABLE" : "WILL BE REJECTED (fee too low to cover IL)"} — break-even ${Number.isFinite(gatePreview.break_even_hours) ? gatePreview.break_even_hours.toFixed(0) + "h" : "∞"} at wide range` : null,
         `  metrics: bin_step=${pool.bin_step}, fee_pct=${pool.fee_pct}%, fee_tvl=${pool.fee_active_tvl_ratio}, vol=$${pool.volume_window}, tvl=$${pool.tvl ?? pool.active_tvl}, volatility_${pool.volatility_timeframe || "30m"}=${pool.volatility}, mcap=$${pool.mcap}, organic=${pool.organic_score}${pool.token_age_hours != null ? `, age=${pool.token_age_hours}h` : ""}`,
         `  audit: top10=${top10Pct}%, bots=${botPct}%, fees=${feesSol}SOL${launchpad ? `, launchpad=${launchpad}` : ""}`,
         pvpLine,
