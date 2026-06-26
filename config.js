@@ -9,9 +9,11 @@ const USER_CONFIG_PATH = repoPath("user-config.json");
 const u = fs.existsSync(USER_CONFIG_PATH)
   ? JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8"))
   : {};
-// Hard floor on single-sided bins_below. Set low to allow narrow ranges that cap
-// conversion/IL loss on a downward exit; still refuses 1-5 bin tiny/churn deploys.
-export const MIN_SAFE_BINS_BELOW = 6;
+// Hard floor on single-sided bins_below. Validation (real implied σ≈25-45%/day, not
+// the 120-240% first assumed) showed WIDE ranges on low-vol/high-fee pools are +EV —
+// they stay in range for days and harvest fees that outweigh the rare IL. Narrow ranges
+// exit fast, earn little, and still take IL. So keep a wide-biased floor.
+export const MIN_SAFE_BINS_BELOW = 35;
 
 function numericConfig(value) {
   const n = Number(value);
@@ -130,7 +132,9 @@ export const config = {
     positionSizePct:       u.positionSizePct       ?? 0.35,
     // Pre-deploy IL gate: reject a position if it would need more than this many in-range
     // hours to earn enough fee to cover a worst-case downward exit (conversion/IL + costs).
-    maxBreakEvenHours:     u.maxBreakEvenHours     ?? 72,
+    // Calibrated to validated reality: profitable wide-range positions hold ~120-140h, so
+    // 150h lets them through while still blocking low-fee setups that can never break even.
+    maxBreakEvenHours:     u.maxBreakEvenHours     ?? 150,
     // Trailing take-profit
     trailingTakeProfit:    u.trailingTakeProfit    ?? true,
     trailingTriggerPct:    u.trailingTriggerPct    ?? 3,    // activate trailing at X% PnL

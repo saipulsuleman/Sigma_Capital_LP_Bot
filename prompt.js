@@ -154,7 +154,8 @@ DEPLOY RULES:
 - Use amount_y only, keep amount_x=0 and bins_above=0.
 - Bin steps must be [80-125].
 - Pick ONE pool only when conviction is real. If only one weak candidate survives, skip and explain why none qualify.
-- RANGE PLACEMENT (single-sided, bins_above=0): A NARROW range caps the conversion/impermanent loss realized when price exits downward — your SOL converts to the falling token, and a wider range means you bought it further down (much larger loss). For volatile pools use a narrow range near ${config.strategy.minBinsBelow}; only widen toward ${config.strategy.maxBinsBelow} for low-volatility pools unlikely to crash through the range. Wider earns more fees ONLY if price holds; a wide range that goes OOR-down realizes a far larger loss.
+- PROFITABILITY (validated against real positions): net PnL = fee earned over time-in-range − conversion/IL loss on a downward exit. The +EV recipe is HIGH fee rate (ideally ≥10%/24h) + LOW volatility + WIDE range held for days: at low volatility a wide range rarely crashes through, so it stays in range and harvests far more fees than the occasional IL costs. Low-fee or high-volatility pools rarely overcome IL — be selective.
+- RANGE PLACEMENT (single-sided, bins_above=0): For LOW-volatility, high-fee pools use a WIDE range (toward ${config.strategy.maxBinsBelow}) to maximize time-in-range and fee harvest — this is the profitable case. Only narrow toward ${config.strategy.minBinsBelow} for higher-volatility pools that are likely to crash through (narrow caps the IL when they do). If the pool is both volatile AND low-fee, skip it.
 
 ${hotMemoryBlock}${weightsSummary ? `${weightsSummary}\nPrioritize candidates whose strongest attributes align with high-weight signals.\n\n` : ""}${lessons ? `LESSONS LEARNED:\n${lessons}\n` : ""}Timestamp: ${new Date().toISOString()}
 `;
