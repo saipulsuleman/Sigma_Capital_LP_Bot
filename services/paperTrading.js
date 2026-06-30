@@ -16,6 +16,8 @@ export const PRIORITY_FEE_ROUND_TRIP_SOL = 0.0004;
 export const SWAP_SLIPPAGE_PCT = 0.05;
 // Fallback bin step (bps) for positions opened before entry_bin_step was recorded.
 export const DEFAULT_BIN_STEP_BPS = 100;
+// Force-close a paper position held this long (7 days) — matches the monte carlo max-hold cap.
+export const MAX_HOLD_HOURS = 168;
 
 /** Parse the bin id out of an exit_reason like "oor_down:bin=-469". */
 function parseExitBin(reason) {
@@ -212,13 +214,27 @@ export async function updatePaperPositions(db = getDb(), getActiveBinFn) {
         const exitReason = isOorDown ? `oor_down:bin=${currentBin}` : `oor_up:bin=${currentBin}`;
         const result = closePaperPosition(db, pos.id, exitReason);
         if (result) closed.push(result);
+        continue;
+      }
+
+      // Max-hold mark-to-market: a still-in-range position held past the cap is force-closed at
+      // the CURRENT bin. If price ended below entry the single-sided SOL is partially converted
+      // to a now-cheaper token (real unrealized IL), so we book it via the oor_down conversion
+      // path using the live bin offset; an at/above-entry hold keeps SOL intact (no IL). This
+      // closes the gap where a downward-drifting wide-range position booked zero IL at max hold.
+      const ageMs = pos.entry_time ? Date.now() - new Date(pos.entry_time).getTime() : 0;
+      if (ageMs >= MAX_HOLD_HOURS * 3_600_000) {
+        const exitReason = currentBin < pos.entry_bin ? `oor_down:bin=${currentBin}` : "max_hold_exceeded";
+        const result = closePaperPosition(db, pos.id, exitReason);
+        if (result) closed.push(result);
       }
     } catch (e) {
       const hoursOpenMs = pos.entry_time ? Date.now() - new Date(pos.entry_time).getTime() : 0;
       const hoursOpen = (hoursOpenMs / 3_600_000).toFixed(1);
       log("paper_warn", `OOR check failed for paper position ${pos.id} (open ${hoursOpen}h): ${e.message}`);
-      // Force-close after 168h (7 days) — matches monte carlo max hold cap — prevents stuck positions
-      if (hoursOpenMs >= 168 * 3_600_000) {
+      // Force-close after the max-hold cap — matches monte carlo — prevents stuck positions. The
+      // bin fetch failed so we have no live price to mark to market: book it as a plain max-hold.
+      if (hoursOpenMs >= MAX_HOLD_HOURS * 3_600_000) {
         const result = closePaperPosition(db, pos.id, "max_hold_exceeded");
         if (result) closed.push(result);
       }

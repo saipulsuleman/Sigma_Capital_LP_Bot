@@ -246,6 +246,61 @@ describe("updatePaperPositions (T18)", () => {
     const row = db.prepare("SELECT status FROM paper_positions WHERE pool_address='pool-err-1'").get();
     assert.equal(row.status, "open", "position should remain open after RPC error");
   });
+
+  test("max-hold while in range but BELOW entry books nonzero IL (mark-to-market)", async () => {
+    const db = makeTmpDb();
+    const id = openPaperPosition(db, {
+      pool_address: "pool-maxhold-down",
+      entry_bin: 500,
+      bins_below: 20,
+      bins_above: 0,
+      amount_sol: 1.0,
+      fee_rate_24h: 50.0,
+      bin_step: 100,
+    });
+    // Age past the 168h cap so the max-hold mark-to-market fires.
+    db.prepare("UPDATE paper_positions SET entry_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-200 hours') WHERE id = ?").run(id);
+
+    // Still in range (min = 480) but well below entry (500) → real conversion/IL.
+    const closed = await updatePaperPositions(db, async () => ({ binId: 485 }));
+    assert.equal(closed.length, 1, "stale in-range-but-below-entry position is force-closed");
+
+    const c = closed[0];
+    assert.match(c.exit_reason, /^oor_down/, "below-entry max-hold is booked as a downward conversion exit");
+
+    // Previously this booked il_loss=0 (max_hold_exceeded). Now it charges the geometric IL.
+    const expected = simulatedExitCosts({ amount_sol: 1.0, entry_bin: 500, bins_below: 20, entry_bin_step: 100 }, "oor_down:bin=485");
+    assert.ok(expected.il_loss > 0, "below-entry conversion loss must be nonzero");
+    assert.ok(Math.abs(c.simulated_pnl_sol - (c.simulated_fee_sol - expected.total)) < 1e-6, "net PnL = gross fee − costs INCLUDING IL");
+  });
+
+  test("max-hold at/above entry keeps SOL intact (no IL)", async () => {
+    const db = makeTmpDb();
+    const id = openPaperPosition(db, {
+      pool_address: "pool-maxhold-flat",
+      entry_bin: 500,
+      bins_below: 20,
+      bins_above: 0,
+      amount_sol: 1.0,
+      bin_step: 100,
+    });
+    db.prepare("UPDATE paper_positions SET entry_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-200 hours') WHERE id = ?").run(id);
+
+    // At entry → SOL never converted → plain max-hold, no IL.
+    const closed = await updatePaperPositions(db, async () => ({ binId: 500 }));
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].exit_reason, "max_hold_exceeded", "at-entry hold keeps SOL → no conversion");
+  });
+
+  test("fresh in-range position is NOT force-closed before the max-hold cap", async () => {
+    const db = makeTmpDb();
+    openPaperPosition(db, { pool_address: "pool-young", entry_bin: 500, bins_below: 20, bins_above: 0, amount_sol: 1.0 });
+    // No backdating: age ≈ 0h, in range below entry → must stay open (not a max-hold close).
+    const closed = await updatePaperPositions(db, async () => ({ binId: 485 }));
+    assert.equal(closed.length, 0, "young in-range position stays open");
+    const row = db.prepare("SELECT status FROM paper_positions WHERE pool_address='pool-young'").get();
+    assert.equal(row.status, "open");
+  });
 });
 
 // ─── getPaperStats ────────────────────────────────────────────────────────────
