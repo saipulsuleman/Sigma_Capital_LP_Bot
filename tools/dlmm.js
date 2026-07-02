@@ -648,9 +648,15 @@ export async function deployPosition({
   const upsideCoveragePct = activePrice > 0 ? ((maxPrice - activePrice) / activePrice) * 100 : null;
   const totalWidthPct = minPrice > 0 ? ((maxPrice - minPrice) / minPrice) * 100 : null;
 
-  // Read base fee directly from pool — baseFactor * binStep / 10^6 gives fee in %
+  // Base fee % per Meteora SDK calculateFeeInfo (verified against @meteora-ag/dlmm dist):
+  //   baseFeeRate = baseFactor * binStep * 10 * 10^baseFeePowerFactor
+  //   fee% = baseFeeRate * 100 / FEE_PRECISION(1e9)  →  baseFactor * binStep * 10^baseFeePowerFactor / 1e6
+  // The previous extra "* 100" inflated the reported base fee 100×.
   const baseFactor = pool.lbPair.parameters?.baseFactor ?? 0;
-  const actualBaseFee = base_fee ?? (baseFactor > 0 ? parseFloat((baseFactor * actualBinStep / 1e6 * 100).toFixed(4)) : null);
+  const baseFeePowerFactor = pool.lbPair.parameters?.baseFeePowerFactor ?? 0;
+  const actualBaseFee = base_fee ?? (baseFactor > 0
+    ? parseFloat((baseFactor * actualBinStep * Math.pow(10, baseFeePowerFactor) / 1e6).toFixed(4))
+    : null);
 
   const totalYLamports = new BN(Math.floor(finalAmountY * 1e9));
   // Token X amount uses mint decimals when available, falling back to 9.
