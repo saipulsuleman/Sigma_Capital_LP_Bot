@@ -77,7 +77,15 @@ konsisten (20% → 41% selama beberapa hari) seiring posisi range-lebar matang.
 2. **T25 `paper_win_rate` → ≥50%** (sekarang ~41%, naik konsisten). Kriteria lain sudah PASS.
 3. Sebelum go-live: tinjau `maxPositions` (sekarang tinggi utk akumulasi data paper)
    vs kapital nyata.
-4. (Opsional) Tambah unit test di `tests/` yang menegaskan max_hold-di-bawah-entry
+4. **Sebelum go-live: cap ukuran compound.** Fitur compound (`index.js` ~baris 827:
+   `deployAmount = baseAmount + pending_compound_sol`) melipat `simulated_fee_sol`
+   terakumulasi (5 close oor_down) ke posisi berikutnya. Di DRY_RUN cek saldo di-skip →
+   posisi bisa membengkak tak terbatas (contoh nyata: 3.19 & 3.70 SOL, digelembungkan
+   fee meme simulasi 235%/321% yang tak realistis). BUKAN bug (compound sesuai desain) &
+   TIDAK mengkorupsi win-rate (gate berbasis jumlah, bukan ukuran). Tapi untuk uang nyata,
+   clamp `deployAmount` ke cap per-posisi (mis. `maxSolPerPosition`) yang ditentukan dari
+   modal nyata. Live sudah punya jaring pengaman cek saldo wallet (F2), cap ini refinement.
+5. (Opsional) Tambah unit test di `tests/` yang menegaskan max_hold-di-bawah-entry
    membebankan IL — mengunci perilaku yang sudah benar agar tak regresi.
 
 ## Catatan Codex vs Claude Code
