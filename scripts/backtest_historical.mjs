@@ -59,8 +59,16 @@ function replay(candles, { binsBelow, binStep, feeRate24h }) {
       return { net: hourlyFee * inRangeHours - costs.total, exit: "oor_down", hours: i, inRangeHours };
     }
   }
-  const costs = simulatedExitCosts({ amount_sol: AMOUNT_SOL, entry_bin: 0, bins_below: binsBelow, entry_bin_step: binStep }, "max_hold_exceeded");
-  return { net: hourlyFee * inRangeHours - costs.total, exit: "max_hold", hours: Math.min(candles.length - 1, MAX_HOLD_H), inRangeHours };
+  // max_hold: charge IL for where the price actually ENDED. A position that drifted below entry
+  // but never pierced the range bottom is still partially converted to token = real unrealized IL.
+  // Book it via the conversion formula at the final offset (matches v2 / range sweep); an
+  // at/above-entry hold keeps SOL intact (no IL).
+  const lastIdx = Math.min(candles.length - 1, MAX_HOLD_H);
+  const finalPrice = candles[lastIdx]?.[4];
+  const finalOffset = finalPrice > 0 ? Math.log(finalPrice / entryPrice) / lnStep : 0;
+  const reason = finalOffset < 0 ? `oor_down:bin=${Math.round(finalOffset)}` : "max_hold_exceeded";
+  const costs = simulatedExitCosts({ amount_sol: AMOUNT_SOL, entry_bin: 0, bins_below: binsBelow, entry_bin_step: binStep }, reason);
+  return { net: hourlyFee * inRangeHours - costs.total, exit: finalOffset < 0 ? "max_hold_down" : "max_hold", hours: lastIdx, inRangeHours };
 }
 
 const db = openDb("db/sigma.db");

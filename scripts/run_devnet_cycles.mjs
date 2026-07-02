@@ -10,7 +10,12 @@
 import { getDb } from "../db/db.js";
 import { recordDevnetRun, getDevnetSummary } from "../services/devnetRunner.js";
 
-const DEVNET_RPC = process.env.HELIUS_DEVNET_RPC_URL || "https://devnet.helius-rpc.com/?api-key=41960e77-fc6b-4ea8-b7d1-c22323dca25b";
+// Read the devnet RPC (with its API key) from the environment — never hardcode a key in source.
+const DEVNET_RPC = process.env.HELIUS_DEVNET_RPC_URL;
+if (!DEVNET_RPC) {
+  console.error("HELIUS_DEVNET_RPC_URL not set in .env — aborting (no hardcoded fallback).");
+  process.exit(1);
+}
 
 // Realistic devnet pool addresses (SOL-USDC on devnet)
 const DEVNET_POOLS = [
